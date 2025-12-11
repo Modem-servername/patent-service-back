@@ -95,7 +95,7 @@ def create_request(
     max_candidates: int = 10,
     create_detailed_chart: bool = True,
     model: str = "gpt-5",
-    follow_up_questions: Optional[list] = None
+    follow_up_questions: Optional[str] = None  # Changed from list to str
 ) -> str:
     """
     새 분석 요청 생성 및 DB 저장
@@ -106,6 +106,10 @@ def create_request(
     request_id = str(uuid.uuid4())
 
     input_type = "pdf_upload" if filename else "patent_number"
+
+    # Store follow_up_questions as-is (string)
+    # No need to json.dumps since it's already a string
+    follow_up_questions_str = follow_up_questions if follow_up_questions else None
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -123,7 +127,7 @@ def create_request(
             max_candidates,
             create_detailed_chart,
             model,
-            json.dumps(follow_up_questions) if follow_up_questions else None,
+            follow_up_questions_str,
             "pending",
             datetime.now().isoformat()
         ))

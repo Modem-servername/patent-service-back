@@ -253,7 +253,7 @@ class PDFUploadAnalysisRequest(BaseModel):
     max_candidates: int = 10
     create_detailed_chart: bool = True
     model: str = "gpt-5"
-    follow_up_questions: Optional[List[str]] = None
+    follow_up_questions: Optional[str] = None  # Changed from List[str] to str
 
 
 @router.post("/upload-pdf-analysis")
@@ -301,23 +301,21 @@ async def upload_pdf_analysis(
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(400, "Only PDF files are allowed")
 
-    # Follow-up questions 파싱
+    # Follow-up questions 파싱 (convert string to list by splitting on newlines)
     questions_list = None
     if follow_up_questions:
-        try:
-            # JSON 문자열로 시도
-            questions_list = json.loads(follow_up_questions)
-        except:
-            # 쉼표나 줄바꿈으로 구분된 문자열로 시도
-            questions_list = [q.strip() for q in follow_up_questions.replace('\n', ',').split(',') if q.strip()]
+        # Split by newlines and filter out empty lines
+        questions_list = [q.strip() for q in follow_up_questions.split('\n') if q.strip()]
+        print(f"[PDF Upload] Parsed {len(questions_list)} follow-up question(s)")
 
     # Create request ID and save to DB
+    # Store original follow_up_questions string (not the parsed list)
     request_id = request_manager.create_request(
         filename=file.filename,
         max_candidates=max_candidates,
         create_detailed_chart=create_detailed_chart,
         model=model,
-        follow_up_questions=questions_list
+        follow_up_questions=follow_up_questions  # Store original string
     )
 
     print(f"[PDF Upload] Request ID: {request_id}")

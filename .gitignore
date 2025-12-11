@@ -1,4 +1,4 @@
 downloaded_patents/
 **/__pycache__/
-.env
 analysis_requests.db
+.env

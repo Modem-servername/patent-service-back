@@ -70,8 +70,8 @@ else:
     openai_client = None
     infringement_analyzer = None
 
-MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", "512"))  # Reduced from 768 for cost efficiency
-MAX_PAGES_PER_BATCH = int(os.getenv("MAX_PAGES_PER_BATCH", "40"))  # Reduced to 40 pages for reliability
+MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", "768")) 
+MAX_PAGES_PER_BATCH = int(os.getenv("MAX_PAGES_PER_BATCH", "30")) 
 print(f"Configuration: MAX_IMAGE_SIZE={MAX_IMAGE_SIZE}px, MAX_PAGES_PER_BATCH={MAX_PAGES_PER_BATCH}")
 
 # Model pricing (per million tokens)
@@ -108,7 +108,7 @@ class InfringementAnalysisRequest(BaseModel):
     create_detailed_chart: bool = True
     model: str = "gpt-5"  # AI model to use (e.g., "gpt-5", "gpt-4o", "gpt-4-turbo")
     custom_prompt: Optional[str] = None  # User-provided analysis instructions (legacy)
-    follow_up_questions: Optional[List[str]] = None # User-provided follow-up questions
+    follow_up_questions: Optional[str] = None # User-provided follow-up questions (string, will be split by newlines)
 
 class PatentPDFResponse(BaseModel):
     patent_number: str
@@ -1132,10 +1132,12 @@ async def root():
 async def analyze(req: PatentRequest):
     if not req.patent_number:
         raise HTTPException(400, "patent number required")
+    # Normalize patent number to uppercase
+    patent_number = req.patent_number.strip().upper()
     # Security: Validate patent number format to prevent path traversal
-    if not re.match(r'^[A-Z]{2}\d+[A-Z\d]*$', req.patent_number):
+    if not re.match(r'^[A-Z]{2}\d+[A-Z\d]*$', patent_number):
         raise HTTPException(400, "Invalid patent number format")
-    return await process_patent(req.patent_number, model=req.model)
+    return await process_patent(patent_number, model=req.model)
 
 @app.post("/analyze-infringement")
 async def analyze_infringement(req: InfringementAnalysisRequest):
@@ -1173,8 +1175,11 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         request_manager.save_error(request_id, "patent number required")
         raise HTTPException(400, "patent number required")
 
+    # Normalize patent number to uppercase
+    patent_number = req.patent_number.strip().upper()
+
     # Security: Validate patent number format to prevent path traversal
-    if not re.match(r'^[A-Z]{2}\d+[A-Z\d]*$', req.patent_number):
+    if not re.match(r'^[A-Z]{2}\d+[A-Z\d]*$', patent_number):
         print("[API] Error: Invalid patent number format")
         request_manager.save_error(request_id, "Invalid patent number format")
         raise HTTPException(400, "Invalid patent number format")
@@ -1188,11 +1193,11 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
     request_manager.update_status(request_id, "processing")
 
     try:
-        print(f"\n[API] Starting infringement analysis for {req.patent_number}")
+        print(f"\n[API] Starting infringement analysis for {patent_number}")
 
         # Step 1: 특허 분석 (기존 기능)
-        print(f"[API] Step 1: Analyzing patent {req.patent_number}...")
-        patent_response = await process_patent(req.patent_number, model=req.model)
+        print(f"[API] Step 1: Analyzing patent {patent_number}...")
+        patent_response = await process_patent(patent_number, model=req.model)
 
         if not patent_response.success:
             print(f"[API] Patent analysis failed: {patent_response.error}")
@@ -1221,12 +1226,23 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         print(f"[API] Step 3: Performing infringement analysis with model {req.model}...")
         if req.custom_prompt:
             print(f"[API] Custom prompt provided (Note: simplified analyzer doesn't use custom prompts): {req.custom_prompt[:100]}...")
+
+        # Convert follow_up_questions from string to list
+        follow_up_questions_list = None
+        if req.follow_up_questions:
+            # Split by newlines and filter out empty lines
+            follow_up_questions_list = [
+                q.strip() for q in req.follow_up_questions.split('\n')
+                if q.strip()
+            ]
+            print(f"[API] Parsed {len(follow_up_questions_list)} follow-up question(s)")
+
         analysis_result = await infringement_analyzer.analyze_infringement(
             patent_data=patent_data,
             max_candidates=req.max_candidates,
             create_detailed_chart=req.create_detailed_chart,
             model=req.model,
-            follow_up_questions=req.follow_up_questions
+            follow_up_questions=follow_up_questions_list
         )
 
         # Step 4: 보고서 생성
@@ -1262,7 +1278,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         result_json = {
             "success": True,
             "request_id": request_id,
-            "patent_number": req.patent_number,
+            "patent_number": patent_number,
             "analysis": analysis_result.model_dump(),
             "markdown_report": markdown_report
         }
@@ -1278,7 +1294,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
 
         print(f"[API] ===== Analysis Complete =====")
         print(f"[API] Request ID: {request_id}")
-        print(f"[API] Patent Number: {req.patent_number}")
+        print(f"[API] Patent Number: {patent_number}")
         print(f"[API] Total Processing Time: {processing_time:.2f}s")
         print(f"[API] Patent Analysis Cost: ${patent_cost:.4f} ({patent_total_tokens:,} tokens)")
         print(f"[API] Infringement Analysis Cost: ${infringement_cost:.4f} ({infringement_tokens:,} tokens)")
@@ -1306,6 +1322,8 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
 
 @app.get("/download/{patent_number}")
 async def download(patent_number: str):
+    # Normalize patent number to uppercase
+    patent_number = patent_number.strip().upper()
     # Security: Validate patent number format to prevent path traversal
     if not re.match(r'^[A-Z]{2}\d+[A-Z\d]*$', patent_number):
         raise HTTPException(400, "Invalid patent number format")
@@ -1335,11 +1353,8 @@ def parse_request_json_fields(request_dict: Dict) -> Dict:
         except:
             request_dict['result_json'] = None
 
-    if request_dict.get('follow_up_questions') and isinstance(request_dict['follow_up_questions'], str):
-        try:
-            request_dict['follow_up_questions'] = json.loads(request_dict['follow_up_questions'])
-        except:
-            request_dict['follow_up_questions'] = None
+    # follow_up_questions is now stored as a plain string (not JSON), so no parsing needed
+    # Keep it as-is
 
     return request_dict
 
