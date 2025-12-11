@@ -56,8 +56,7 @@ def check_cancellation(request_id: str) -> bool:
     Returns:
         True if cancelled, False otherwise
     """
-    req_data = request_manager.get_request(request_id)
-    if req_data and req_data.get('status') == 'cancelled':
+    if request_manager.is_cancelled(request_id):
         print(f"[PDF Upload] Analysis cancelled: {request_id}")
         return True
     return False
@@ -148,6 +147,27 @@ async def perform_pdf_analysis_background(
         # Calculate processing time
         processing_time = time_module.time() - start_time
 
+        # 비용 및 토큰 집계
+        # PDF 분석 비용 (analyze_pdf_file에서 발생)
+        pdf_input_tokens = patent_data.get('_input_tokens', 0)
+        pdf_output_tokens = patent_data.get('_output_tokens', 0)
+        pdf_cost = patent_data.get('_cost', 0.0)
+        pdf_total_tokens = pdf_input_tokens + pdf_output_tokens
+
+        # 침해 분석 비용 (analyzer_instance에서 발생)
+        infringement_input_tokens = analyzer_instance.total_input_tokens
+        infringement_output_tokens = analyzer_instance.total_output_tokens
+        infringement_cost = analyzer_instance.total_cost
+        infringement_tokens = infringement_input_tokens + infringement_output_tokens
+
+        # 전체 합산
+        total_cost = pdf_cost + infringement_cost
+        total_tokens = pdf_total_tokens + infringement_tokens
+
+        print(f"[PDF Upload] PDF Analysis: ${pdf_cost:.4f} ({pdf_total_tokens:,} tokens)")
+        print(f"[PDF Upload] Infringement Analysis: ${infringement_cost:.4f} ({infringement_tokens:,} tokens)")
+        print(f"[PDF Upload] Total: ${total_cost:.4f} ({total_tokens:,} tokens)")
+
         # Prepare result JSON
         result_json = {
             "success": True,
@@ -204,8 +224,8 @@ async def perform_pdf_analysis_background(
             result_json=result_json,
             markdown_report=markdown_report,
             processing_time=processing_time,
-            total_cost=0.0,
-            total_tokens=0,
+            total_cost=total_cost,
+            total_tokens=total_tokens,
             pdf_file_path=str(permanent_filepath)
         )
 
@@ -453,6 +473,14 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
         # Calculate processing time
         processing_time = time_module.time() - start_time
 
+        # 비용 및 토큰 집계 (PDF 분석만)
+        pdf_input_tokens = patent_data.get('_input_tokens', 0)
+        pdf_output_tokens = patent_data.get('_output_tokens', 0)
+        pdf_cost = patent_data.get('_cost', 0.0)
+        pdf_total_tokens = pdf_input_tokens + pdf_output_tokens
+
+        print(f"[PDF Upload] PDF Analysis: ${pdf_cost:.4f} ({pdf_total_tokens:,} tokens)")
+
         # Prepare result
         result_json = {
             "success": True,
@@ -467,8 +495,8 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
             result_json=result_json,
             markdown_report="",  # No markdown report for PDF-only analysis
             processing_time=processing_time,
-            total_cost=0.0,
-            total_tokens=0,
+            total_cost=pdf_cost,
+            total_tokens=pdf_total_tokens,
             pdf_file_path=str(permanent_filepath)
         )
 

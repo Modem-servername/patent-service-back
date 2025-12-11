@@ -245,6 +245,30 @@ def get_request(request_id: str) -> Optional[Dict]:
         return None
 
 
+def is_cancelled(request_id: str) -> bool:
+    """
+    요청이 취소되었는지 확인
+
+    Args:
+        request_id: 요청 ID
+
+    Returns:
+        bool: 취소되었으면 True, 아니면 False
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT status FROM analysis_requests
+            WHERE request_id = ?
+        """, (request_id,))
+
+        row = cursor.fetchone()
+        if not row:
+            return False
+
+        return row[0] == "cancelled"
+
+
 def cancel_request(request_id: str) -> bool:
     """
     요청 취소
@@ -375,5 +399,65 @@ def get_statistics() -> Dict:
         }
 
 
+def cleanup_stale_requests(timeout_minutes: int = 60):
+    """
+    서버 시작 시 오래된 pending/processing 요청들을 정리
+
+    Args:
+        timeout_minutes: 이 시간(분) 이상 지난 요청을 stale로 간주
+    """
+    from datetime import datetime, timedelta
+
+    cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Stale 요청 찾기 (pending 또는 processing 상태이면서 오래된 것들)
+        cursor.execute("""
+            SELECT request_id, status, created_at, started_at
+            FROM analysis_requests
+            WHERE status IN ('pending', 'processing')
+            AND (
+                (status = 'pending' AND created_at < ?)
+                OR (status = 'processing' AND COALESCE(started_at, created_at) < ?)
+            )
+        """, (cutoff_time, cutoff_time))
+
+        stale_requests = cursor.fetchall()
+
+        if not stale_requests:
+            print("[Request Manager] No stale requests found")
+            return
+
+        print(f"[Request Manager] Found {len(stale_requests)} stale request(s), marking as failed...")
+
+        # Stale 요청들을 failed로 변경
+        for row in stale_requests:
+            request_id = row[0]
+            status = row[1]
+
+            cursor.execute("""
+                UPDATE analysis_requests
+                SET status = ?,
+                    error_message = ?,
+                    completed_at = ?
+                WHERE request_id = ?
+            """, (
+                "failed",
+                f"Request timed out or server was restarted while in '{status}' state",
+                datetime.now().isoformat(),
+                request_id
+            ))
+
+            print(f"  - {request_id}: {status} -> failed")
+
+        conn.commit()
+        print(f"[Request Manager] Cleanup complete: {len(stale_requests)} request(s) marked as failed")
+
+
 # 앱 시작 시 DB 초기화
 init_database()
+
+# 서버 시작 시 stale 요청 정리 (60분 이상 pending/processing 상태인 것들)
+cleanup_stale_requests(timeout_minutes=60)

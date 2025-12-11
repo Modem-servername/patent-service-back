@@ -1011,6 +1011,11 @@ async def analyze_pdf_file(pdf_path: str) -> Optional[Dict]:
         print(f"[PDF Analysis] Title: {data.get('title', 'N/A')}")
         print(f"[PDF Analysis] Claims: {len(data.get('claims', []))}")
 
+        # 토큰 정보를 data에 추가 (기존 호환성 유지)
+        data['_input_tokens'] = result.get('input_tokens', 0)
+        data['_output_tokens'] = result.get('output_tokens', 0)
+        data['_cost'] = result.get('cost', 0.0)
+
         return data
 
     except Exception as e:
@@ -1194,6 +1199,15 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
     try:
         print(f"\n[API] Starting infringement analysis for {patent_number}")
 
+        # Check cancellation before Step 1
+        if request_manager.is_cancelled(request_id):
+            print(f"[API] Request {request_id} was cancelled before Step 1")
+            return JSONResponse(content={
+                "success": False,
+                "request_id": request_id,
+                "error": "Request was cancelled by user"
+            })
+
         # Step 1: 특허 분석 (기존 기능)
         print(f"[API] Step 1: Analyzing patent {patent_number}...")
         patent_response = await process_patent(patent_number, model=req.model)
@@ -1205,6 +1219,15 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         print(f"[API] Patent analysis successful")
         print(f"[API] Title: {patent_response.title}")
         print(f"[API] Claims count: {patent_response.claims_count}")
+
+        # Check cancellation before Step 2
+        if request_manager.is_cancelled(request_id):
+            print(f"[API] Request {request_id} was cancelled after Step 1")
+            return JSONResponse(content={
+                "success": False,
+                "request_id": request_id,
+                "error": "Request was cancelled by user"
+            })
 
         # Step 2: 특허 데이터를 Dict로 변환
         print(f"[API] Step 2: Converting patent data to dict...")
@@ -1220,6 +1243,15 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
             "publication_date": patent_response.publication_date,
             "classifications": patent_response.classifications
         }
+
+        # Check cancellation before Step 3
+        if request_manager.is_cancelled(request_id):
+            print(f"[API] Request {request_id} was cancelled before Step 3")
+            return JSONResponse(content={
+                "success": False,
+                "request_id": request_id,
+                "error": "Request was cancelled by user"
+            })
 
         # Step 3: 침해 분석 수행
         print(f"[API] Step 3: Performing infringement analysis with model {req.model}...")
@@ -1244,6 +1276,15 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
             follow_up_questions=follow_up_questions_list
         )
 
+        # Check cancellation after Step 3
+        if request_manager.is_cancelled(request_id):
+            print(f"[API] Request {request_id} was cancelled after Step 3")
+            return JSONResponse(content={
+                "success": False,
+                "request_id": request_id,
+                "error": "Request was cancelled by user"
+            })
+
         # Step 4: 보고서 생성
         print(f"[API] Step 4: Generating report...")
         markdown_report = format_analysis_report(analysis_result)
@@ -1258,17 +1299,11 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         patent_total_tokens = patent_input_tokens + patent_output_tokens
 
         # 침해 분석 비용 및 토큰 (Step 3에서 발생한 비용)
-        infringement_cost = 0.0
-        infringement_tokens = 0
-        if hasattr(analysis_result, 'analysis_notes') and analysis_result.analysis_notes:
-            # re module is already imported at the top of the file (line 12)
-            cost_match = re.search(r'Cost: \$(\d+\.\d+)', analysis_result.analysis_notes)
-            tokens_match = re.search(r'Total tokens: ([\d,]+)', analysis_result.analysis_notes)
-
-            if cost_match:
-                infringement_cost = float(cost_match.group(1))
-            if tokens_match:
-                infringement_tokens = int(tokens_match.group(1).replace(',', ''))
+        # analyzer 인스턴스에서 직접 읽어와 정확성 보장
+        infringement_input_tokens = infringement_analyzer.total_input_tokens
+        infringement_output_tokens = infringement_analyzer.total_output_tokens
+        infringement_tokens = infringement_input_tokens + infringement_output_tokens
+        infringement_cost = infringement_analyzer.total_cost
 
         # 전체 합산 (특허 분석 + 침해 분석)
         total_cost = patent_cost + infringement_cost
@@ -1295,8 +1330,15 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         print(f"[API] Request ID: {request_id}")
         print(f"[API] Patent Number: {patent_number}")
         print(f"[API] Total Processing Time: {processing_time:.2f}s")
-        print(f"[API] Patent Analysis Cost: ${patent_cost:.4f} ({patent_total_tokens:,} tokens)")
-        print(f"[API] Infringement Analysis Cost: ${infringement_cost:.4f} ({infringement_tokens:,} tokens)")
+        print(f"[API] ")
+        print(f"[API] Patent Analysis:")
+        print(f"[API]   Cost: ${patent_cost:.4f}")
+        print(f"[API]   Tokens: {patent_total_tokens:,} (Input: {patent_input_tokens:,}, Output: {patent_output_tokens:,})")
+        print(f"[API] ")
+        print(f"[API] Infringement Analysis:")
+        print(f"[API]   Cost: ${infringement_cost:.4f}")
+        print(f"[API]   Tokens: {infringement_tokens:,} (Input: {infringement_input_tokens:,}, Output: {infringement_output_tokens:,})")
+        print(f"[API] ")
         print(f"[API] Total Cost: ${total_cost:.4f}")
         print(f"[API] Total Tokens: {total_tokens:,}")
         print(f"[API] ===============================")
