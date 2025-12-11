@@ -1262,7 +1262,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         infringement_cost = 0.0
         infringement_tokens = 0
         if hasattr(analysis_result, 'analysis_notes') and analysis_result.analysis_notes:
-            import re
+            # re module is already imported at the top of the file (line 12)
             cost_match = re.search(r'Cost: \$(\d+\.\d+)', analysis_result.analysis_notes)
             tokens_match = re.search(r'Total tokens: ([\d,]+)', analysis_result.analysis_notes)
 
