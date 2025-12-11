@@ -21,7 +21,7 @@ import fitz
 from PIL import Image
 import time
 import base64
-from router import db
+# from router import db  # Commented out - router module does not exist
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import request manager
@@ -37,7 +37,6 @@ from infringement_search_v2 import (
 load_dotenv()
 
 app = FastAPI(title="Complete Patent Analysis API with Infringement Detection")
-app.include_router(db.router)
 
 # PDF Upload router import (나중에 초기화)
 pdf_upload_router = None
