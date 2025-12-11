@@ -49,7 +49,8 @@ if OPENAI_API_KEY and OPENAI_API_KEY != "your_api_key_here":
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
     infringement_analyzer = SimplifiedInfringementAnalyzer(
         api_key=OPENAI_API_KEY,
-        tavily_api_key=TAVILY_API_KEY
+        tavily_api_key=TAVILY_API_KEY,
+        max_concurrent_requests=15  # 병렬 처리 성능 향상 (기본값 5 → 15)
     )
     print("api key loaded")
     if TAVILY_API_KEY and TAVILY_API_KEY != "your_tavily_api_key_here":
@@ -91,11 +92,18 @@ PDF_URL_CACHE_TTL = 86400  # 24 hours in seconds
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-PDF_DIR = Path("downloaded_patents")
+# 프로젝트 루트 디렉토리 (main.py가 있는 위치)
+BASE_DIR = Path(__file__).parent.resolve()
+
+PDF_DIR = BASE_DIR / "downloaded_patents"
 PDF_DIR.mkdir(exist_ok=True)
 
-IMAGE_CACHE_DIR = Path("image_cache")
+IMAGE_CACHE_DIR = BASE_DIR / "image_cache"
 IMAGE_CACHE_DIR.mkdir(exist_ok=True)
+
+print(f"[Config] Base directory: {BASE_DIR}")
+print(f"[Config] PDF directory: {PDF_DIR}")
+print(f"[Config] Image cache directory: {IMAGE_CACHE_DIR}")
 
 class PatentRequest(BaseModel):
     patent_number: str
@@ -1363,24 +1371,47 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
 
 @app.get("/download/{patent_number}")
 async def download(patent_number: str):
+    """PDF 다운로드 엔드포인트"""
     # Normalize patent number to uppercase
     patent_number = patent_number.strip().upper()
+    print(f"[Download] Request for patent: {patent_number}")
+
     # Security: Validate patent number format to prevent path traversal
     if not re.match(r'^[A-Z]{2}\d+[A-Z\d]*$', patent_number):
+        print(f"[Download] Invalid format: {patent_number}")
         raise HTTPException(400, "Invalid patent number format")
 
-    p = PDF_DIR / f"{patent_number}.pdf"
-    if p.exists():
-        return FileResponse(p, filename=f"{patent_number}.pdf", media_type="application/pdf")
+    # 파일 경로 확인 (대소문자 구분 없이 찾기)
+    pdf_path = PDF_DIR / f"{patent_number}.pdf"
+    print(f"[Download] Looking for file: {pdf_path}")
 
+    # 파일이 정확히 일치하는 경우
+    if pdf_path.exists():
+        print(f"[Download] File found (exact match): {pdf_path}")
+        return FileResponse(pdf_path, filename=f"{patent_number}.pdf", media_type="application/pdf")
+
+    # 대소문자 구분 없이 파일 찾기 (Windows에서 유용)
+    if PDF_DIR.exists():
+        for file in PDF_DIR.iterdir():
+            if file.is_file() and file.suffix.lower() == '.pdf':
+                if file.stem.upper() == patent_number:
+                    print(f"[Download] File found (case-insensitive): {file}")
+                    return FileResponse(file, filename=f"{patent_number}.pdf", media_type="application/pdf")
+
+    print(f"[Download] File not found in {PDF_DIR}, attempting download...")
+
+    # 파일이 없으면 다운로드 시도
     url = await get_pdf_url_from_page(patent_number)
     if not url:
-        raise HTTPException(404, "url not found")
+        print(f"[Download] PDF URL not found for {patent_number}")
+        raise HTTPException(404, f"PDF URL not found for patent {patent_number}")
 
     path = await download_pdf(url, patent_number)
     if not path:
-        raise HTTPException(404, "download failed")
+        print(f"[Download] Failed to download PDF for {patent_number}")
+        raise HTTPException(404, f"Failed to download PDF for patent {patent_number}")
 
+    print(f"[Download] Successfully downloaded: {path}")
     return FileResponse(path, filename=f"{patent_number}.pdf", media_type="application/pdf")
 
 

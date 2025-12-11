@@ -28,13 +28,20 @@ sys.path.append(str(Path(__file__).parent))
 
 router = APIRouter()
 
+# 프로젝트 루트 디렉토리 (pdf_upload_handler.py가 있는 위치)
+BASE_DIR = Path(__file__).parent.resolve()
+
 # 업로드된 파일 저장 디렉토리 (임시)
-UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # 영구 보관용 PDF 디렉토리
-PATENT_PDF_DIR = Path("downloaded_patents")
+PATENT_PDF_DIR = BASE_DIR / "downloaded_patents"
 PATENT_PDF_DIR.mkdir(exist_ok=True)
+
+print(f"[PDF Upload] Base directory: {BASE_DIR}")
+print(f"[PDF Upload] Upload directory: {UPLOAD_DIR}")
+print(f"[PDF Upload] Patent PDF directory: {PATENT_PDF_DIR}")
 
 # Analyzer 인스턴스 (전역)
 analyzer_instance = None
@@ -45,7 +52,8 @@ def init_analyzer(openai_api_key: str, tavily_api_key: Optional[str] = None):
     global analyzer_instance
     analyzer_instance = SimplifiedInfringementAnalyzer(
         api_key=openai_api_key,
-        tavily_api_key=tavily_api_key
+        tavily_api_key=tavily_api_key,
+        max_concurrent_requests=15  # 병렬 처리 성능 향상 (기본값 5 → 15)
     )
 
 
