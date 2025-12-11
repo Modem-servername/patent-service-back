@@ -33,7 +33,7 @@ UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # 영구 보관용 PDF 디렉토리
-PATENT_PDF_DIR = Path("patent_pdfs")
+PATENT_PDF_DIR = Path("downloaded_patents")
 PATENT_PDF_DIR.mkdir(exist_ok=True)
 
 # Analyzer 인스턴스 (전역)
