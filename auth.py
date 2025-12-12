@@ -1,8 +1,8 @@
 """
-인증 모듈 - SHA-256 해시 기반 로그인 시스템
+Authentication Module - SHA-256 Hash-based Login System
 
-프론트엔드: SHA-256으로 해시 → 서버 전송
-백엔드: 평문 비밀번호를 SHA-256으로 해시하여 비교
+Frontend: Hashes with SHA-256 → Sends to server
+Backend: Hashes plain password with SHA-256 and compares
 """
 
 import os
@@ -15,71 +15,71 @@ from fastapi import HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-# 환경 변수에서 설정 읽기
+# Read configuration from environment variables
 load_dotenv()
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")  # 평문 비밀번호
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")  # Plain text password
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
 JWT_ALGORITHM = "HS256"
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24시간
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
-# HTTP Bearer 인증 스키마
+# HTTP Bearer authentication scheme
 security = HTTPBearer()
 
 
 class LoginRequest(BaseModel):
-    """로그인 요청 스키마"""
-    password_hash: str  # 프론트엔드에서 SHA-256 해시된 값
+    """Login request schema"""
+    password_hash: str  # SHA-256 hashed value from frontend
 
 
 class TokenResponse(BaseModel):
-    """토큰 응답 스키마"""
+    """Token response schema"""
     access_token: str
     token_type: str = "bearer"
-    expires_in: int  # 초 단위
+    expires_in: int  # In seconds
 
 
 def hash_password(plain_password: str) -> str:
     """
-    평문 비밀번호를 SHA-256으로 해시
+    Hash plain password with SHA-256
 
     Args:
-        plain_password: 평문 비밀번호
+        plain_password: Plain text password
 
     Returns:
-        SHA-256 해시 (소문자 hex)
+        SHA-256 hash (lowercase hex)
     """
     return hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
 
 
 def authenticate(client_hash: str) -> bool:
     """
-    클라이언트에서 전송한 SHA-256 해시로 인증
+    Authenticate using SHA-256 hash from client
 
     Args:
-        client_hash: 프론트엔드에서 SHA-256 해시한 비밀번호
+        client_hash: Password hashed with SHA-256 from frontend
 
     Returns:
-        인증 성공 여부
+        Authentication success status
     """
     if not ADMIN_PASSWORD:
         print("[Auth] Warning: ADMIN_PASSWORD not set in environment variables")
         return False
 
-    # 서버의 평문 비밀번호를 SHA-256으로 해시
+    # Hash server's plain password with SHA-256
     server_hash = hash_password(ADMIN_PASSWORD)
     return client_hash.lower() == server_hash.lower()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
-    JWT 액세스 토큰 생성
+    Generate JWT access token
 
     Args:
-        data: 토큰에 포함할 데이터
-        expires_delta: 만료 시간 (기본값: 24시간)
+        data: Data to include in token
+        expires_delta: Expiration time (default: 24 hours)
 
     Returns:
-        JWT 토큰 문자열
+        JWT token string
     """
     to_encode = data.copy()
 
@@ -96,16 +96,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def verify_token(token: str) -> dict:
     """
-    JWT 토큰 검증 및 디코딩
+    Verify and decode JWT token
 
     Args:
-        token: JWT 토큰
+        token: JWT token
 
     Returns:
-        토큰 페이로드
+        Token payload
 
     Raises:
-        HTTPException: 토큰이 유효하지 않은 경우
+        HTTPException: If token is invalid
     """
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
@@ -123,26 +123,26 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(security)
 ) -> dict:
     """
-    현재 인증된 사용자 정보 가져오기 (의존성)
+    Get current authenticated user information (dependency)
 
-    보호된 엔드포인트에서 사용:
+    Use in protected endpoints:
         @app.get("/protected")
         async def protected_route(user: dict = Depends(get_current_user)):
             ...
 
     Args:
-        credentials: HTTP Authorization 헤더의 Bearer 토큰
+        credentials: Bearer token from HTTP Authorization header
 
     Returns:
-        사용자 정보 딕셔너리
+        User information dictionary
 
     Raises:
-        HTTPException: 인증 실패 시
+        HTTPException: On authentication failure
     """
     token = credentials.credentials
     payload = verify_token(token)
 
-    # 토큰에서 사용자 정보 추출
+    # Extract user information from token
     user_type = payload.get("type")
     if user_type != "admin":
         raise HTTPException(
@@ -155,16 +155,16 @@ async def get_current_user(
 
 def login(password_hash: str) -> TokenResponse:
     """
-    로그인 처리
+    Process login
 
     Args:
-        password_hash: SHA-256으로 해시된 비밀번호
+        password_hash: Password hashed with SHA-256
 
     Returns:
-        JWT 토큰 응답
+        JWT token response
 
     Raises:
-        HTTPException: 인증 실패 시
+        HTTPException: On authentication failure
     """
     if not authenticate(password_hash):
         print(f"[Auth] Login failed: invalid password hash")
@@ -173,7 +173,7 @@ def login(password_hash: str) -> TokenResponse:
             detail="Incorrect password"
         )
 
-    # JWT 토큰 생성
+    # Generate JWT token
     access_token = create_access_token(
         data={"type": "admin", "authenticated": True}
     )
@@ -183,21 +183,21 @@ def login(password_hash: str) -> TokenResponse:
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60  # 초 단위로 변환
+        expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert to seconds
     )
 
 
 def generate_client_password_hash(plain_password: str) -> str:
     """
-    평문 비밀번호를 SHA-256으로 해시 (클라이언트 시뮬레이션용)
+    Hash plain password with SHA-256 (for client simulation)
 
-    프론트엔드에서는 JavaScript로 동일한 해시를 생성:
+    Frontend generates the same hash in JavaScript:
     const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
 
     Args:
-        plain_password: 평문 비밀번호
+        plain_password: Plain text password
 
     Returns:
-        SHA-256 해시 (소문자 hex)
+        SHA-256 hash (lowercase hex)
     """
     return hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
