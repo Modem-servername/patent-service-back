@@ -434,7 +434,7 @@ Description: {description[:500]}
         patent_data: Dict,
         claim_text: str,
         tech_summary: str,
-        max_candidates: int = 10
+        max_candidates: int = 5
     ) -> List[InfringementCandidate]:
         """잠재적 침해자 검색"""
         print(f"[Infringers] Searching for potential infringers...")
