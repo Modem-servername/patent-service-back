@@ -39,10 +39,6 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 PATENT_PDF_DIR = BASE_DIR / "downloaded_patents"
 PATENT_PDF_DIR.mkdir(exist_ok=True)
 
-print(f"[PDF Upload] Base directory: {BASE_DIR}")
-print(f"[PDF Upload] Upload directory: {UPLOAD_DIR}")
-print(f"[PDF Upload] Patent PDF directory: {PATENT_PDF_DIR}")
-
 # Analyzer 인스턴스 (전역)
 analyzer_instance = None
 
