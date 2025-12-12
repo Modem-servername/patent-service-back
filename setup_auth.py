@@ -1,16 +1,17 @@
 """
 인증 설정 스크립트
 
-SHA-256 + bcrypt 이중 해싱 방식
+SHA-256 해싱 방식 (간소화)
 비밀번호: servername2006**
 """
 
 import hashlib
-import bcrypt
 import secrets
 
-# 1단계: 클라이언트 측 SHA-256 해싱 (프론트엔드에서 수행)
+# 비밀번호 설정
 plain_password = "servername2006**"
+
+# 클라이언트 측 SHA-256 해싱 (프론트엔드에서 수행될 해시)
 client_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
 
 print("=" * 70)
@@ -18,14 +19,7 @@ print("인증 설정")
 print("=" * 70)
 print()
 print("비밀번호:", plain_password)
-print("SHA-256 해시 (프론트엔드):", client_hash)
-print()
-
-# 2단계: 서버 측 bcrypt 해싱 (백엔드에서 저장)
-salt = bcrypt.gensalt(rounds=12)
-server_hash = bcrypt.hashpw(client_hash.encode('utf-8'), salt).decode('utf-8')
-
-print("bcrypt 해시 (백엔드):", server_hash)
+print("SHA-256 해시 (프론트엔드 전송값):", client_hash)
 print()
 
 # JWT 시크릿 키 생성
@@ -38,10 +32,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 # Tavily API Key (optional, for web search)
 TAVILY_API_KEY=your_tavily_api_key_here
 
-# Admin Password Hash (SHA-256 해시를 bcrypt로 해싱한 값)
-# 원본 비밀번호: servername2006**
-# SHA-256 해시: {client_hash}
-ADMIN_PASSWORD_HASH={server_hash}
+# Admin Password (평문)
+# 프론트엔드에서 SHA-256 해시로 전송 → 백엔드에서 평문을 해시하여 비교
+ADMIN_PASSWORD={plain_password}
 
 # JWT Secret Key
 JWT_SECRET_KEY={jwt_secret}
@@ -72,5 +65,6 @@ print("프론트엔드 구현:")
 print("  - JavaScript/TypeScript에서 비밀번호를 SHA-256으로 해시")
 print(f"  - 예상 해시값: {client_hash}")
 print("  - 이 해시를 서버로 전송")
+print("  - 백엔드에서 평문 비밀번호를 해시하여 비교")
 print()
 print("=" * 70)

@@ -1,13 +1,12 @@
 """
-인증 모듈 - SHA-256 + bcrypt 이중 해싱 기반 로그인 시스템
+인증 모듈 - SHA-256 해시 기반 로그인 시스템
 
 프론트엔드: SHA-256으로 해시 → 서버 전송
-백엔드: bcrypt로 검증
+백엔드: 평문 비밀번호를 SHA-256으로 해시하여 비교
 """
 
 import os
 import hashlib
-import bcrypt
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -16,7 +15,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 # 환경 변수에서 설정 읽기
-ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")  # 평문 비밀번호
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24시간
@@ -37,43 +36,38 @@ class TokenResponse(BaseModel):
     expires_in: int  # 초 단위
 
 
-def verify_password_hash(client_hash: str, stored_bcrypt_hash: str) -> bool:
+def hash_password(plain_password: str) -> str:
     """
-    클라이언트에서 전송한 SHA-256 해시를 bcrypt와 비교
+    평문 비밀번호를 SHA-256으로 해시
 
     Args:
-        client_hash: 프론트엔드에서 SHA-256으로 해시한 값
-        stored_bcrypt_hash: 서버에 저장된 bcrypt 해시 값
+        plain_password: 평문 비밀번호
 
     Returns:
-        비밀번호 일치 여부
+        SHA-256 해시 (소문자 hex)
     """
-    try:
-        # 클라이언트 해시를 bcrypt로 검증
-        return bcrypt.checkpw(
-            client_hash.encode('utf-8'),
-            stored_bcrypt_hash.encode('utf-8')
-        )
-    except Exception as e:
-        print(f"[Auth] Password verification error: {e}")
-        return False
+    return hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
 
 
-def authenticate(password_hash: str) -> bool:
+def authenticate(client_hash: str) -> bool:
     """
-    SHA-256 해시된 비밀번호로 인증
+    클라이언트에서 전송한 SHA-256 해시로 인증
 
     Args:
-        password_hash: 프론트엔드에서 SHA-256 해시한 비밀번호
+        client_hash: 프론트엔드에서 SHA-256 해시한 비밀번호
 
     Returns:
         인증 성공 여부
     """
-    if not ADMIN_PASSWORD_HASH:
-        print("[Auth] Warning: ADMIN_PASSWORD_HASH not set in environment variables")
+    if not ADMIN_PASSWORD:
+        print("[Auth] Warning: ADMIN_PASSWORD not set in environment variables")
         return False
 
-    return verify_password_hash(password_hash, ADMIN_PASSWORD_HASH)
+    # 서버의 평문 비밀번호를 SHA-256으로 해시
+    server_hash = hash_password(ADMIN_PASSWORD)
+
+    # 클라이언트 해시와 비교
+    return client_hash == server_hash
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
