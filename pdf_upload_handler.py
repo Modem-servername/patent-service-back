@@ -1,6 +1,6 @@
 """
 PDF Upload Handler for Patent Analysis
-사용자가 직접 PDF를 업로드하여 특허 침해 분석을 수행
+Allows users to directly upload PDF files for patent infringement analysis
 """
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
@@ -13,7 +13,7 @@ from pathlib import Path
 import time
 import asyncio
 
-# 기존 모듈에서 분석 로직 import
+# Import analysis logic from existing module
 from infringement_search_v2 import (
     SimplifiedInfringementAnalyzer,
     format_analysis_report
@@ -22,40 +22,40 @@ from infringement_search_v2 import (
 # Request manager import
 import request_manager
 
-# main.py에서 PDF 분석 함수 import
+# Import PDF analysis function from main.py
 import sys
 sys.path.append(str(Path(__file__).parent))
 
 router = APIRouter()
 
-# 프로젝트 루트 디렉토리 (pdf_upload_handler.py가 있는 위치)
+# Project root directory (where pdf_upload_handler.py is located)
 BASE_DIR = Path(__file__).parent.resolve()
 
-# 업로드된 파일 저장 디렉토리 (임시)
+# Uploaded file storage directory (temporary)
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# 영구 보관용 PDF 디렉토리
+# Permanent PDF storage directory
 PATENT_PDF_DIR = BASE_DIR / "downloaded_patents"
 PATENT_PDF_DIR.mkdir(exist_ok=True)
 
-# Analyzer 인스턴스 (전역)
+# Analyzer instance (global)
 analyzer_instance = None
 
 
 def init_analyzer(openai_api_key: str, tavily_api_key: Optional[str] = None):
-    """Analyzer 초기화"""
+    """Initialize analyzer"""
     global analyzer_instance
     analyzer_instance = SimplifiedInfringementAnalyzer(
         api_key=openai_api_key,
         tavily_api_key=tavily_api_key,
-        max_concurrent_requests=15  # 병렬 처리 성능 향상 (기본값 5 → 15)
+        max_concurrent_requests=15  # Enhanced parallel processing (default 5 → 15)
     )
 
 
 def check_cancellation(request_id: str) -> bool:
     """
-    요청이 취소되었는지 확인
+    Check if request has been cancelled
 
     Returns:
         True if cancelled, False otherwise
@@ -67,7 +67,7 @@ def check_cancellation(request_id: str) -> bool:
 
 
 class CancelledException(Exception):
-    """분석이 취소되었을 때 발생하는 예외"""
+    """Exception raised when analysis is cancelled"""
     pass
 
 
@@ -81,7 +81,7 @@ async def perform_pdf_analysis_background(
     questions_list: Optional[List[str]],
     file_filename: str
 ):
-    """백그라운드에서 PDF 분석 수행"""
+    """Perform PDF analysis in the background"""
     import time as time_module
     import traceback
     import json
@@ -93,11 +93,11 @@ async def perform_pdf_analysis_background(
         # Update status to processing
         request_manager.update_status(request_id, "processing")
 
-        # 취소 확인
+        # Check for cancellation
         if check_cancellation(request_id):
             raise CancelledException("Analysis cancelled by user")
 
-        # PDF 분석
+        # Analyze PDF
         print(f"[PDF Upload] Starting PDF analysis...")
         from main import analyze_pdf_file
         patent_data = await analyze_pdf_file(str(temp_filepath))
@@ -109,11 +109,11 @@ async def perform_pdf_analysis_background(
         print(f"[PDF Upload] Title: {patent_data.get('title', 'N/A')}")
         print(f"[PDF Upload] Claims count: {len(patent_data.get('claims', []))}")
 
-        # 취소 확인
+        # Check for cancellation
         if check_cancellation(request_id):
             raise CancelledException("Analysis cancelled by user")
 
-        # 침해 분석 수행
+        # Perform infringement analysis
         print(f"[PDF Upload] Performing infringement analysis with model {model}...")
         analysis_result = await analyzer_instance.analyze_infringement(
             patent_data=patent_data,
@@ -123,48 +123,48 @@ async def perform_pdf_analysis_background(
             follow_up_questions=questions_list
         )
 
-        # 취소 확인
+        # Check for cancellation
         if check_cancellation(request_id):
             raise CancelledException("Analysis cancelled by user")
 
-        # 보고서 생성
+        # Generate report
         print(f"[PDF Upload] Generating report...")
         markdown_report = format_analysis_report(analysis_result)
 
         print(f"[PDF Upload] Analysis completed successfully")
 
-        # 특허번호로 파일명 변경
+        # Rename file to patent number
         patent_number = analysis_result.issued_number or "UNKNOWN"
         safe_patent_number = "".join(c for c in patent_number if c.isalnum() or c in ('-', '_'))
         permanent_filename = f"{safe_patent_number}.pdf"
         permanent_filepath = PATENT_PDF_DIR / permanent_filename
 
-        # 기존 파일이 있으면 삭제
+        # Remove existing file if present
         if permanent_filepath.exists():
             os.remove(permanent_filepath)
             print(f"[PDF Upload] Removed existing file: {permanent_filepath}")
 
-        # 임시 파일을 특허번호 파일명으로 변경
+        # Move temp file to permanent location with patent number
         shutil.move(str(temp_permanent_filepath), str(permanent_filepath))
         print(f"[PDF Upload] Renamed to patent number: {permanent_filepath}")
 
         # Calculate processing time
         processing_time = time_module.time() - start_time
 
-        # 비용 및 토큰 집계
-        # PDF 분석 비용 (analyze_pdf_file에서 발생)
+        # Aggregate costs and tokens
+        # PDF analysis cost (from analyze_pdf_file)
         pdf_input_tokens = patent_data.get('_input_tokens', 0)
         pdf_output_tokens = patent_data.get('_output_tokens', 0)
         pdf_cost = patent_data.get('_cost', 0.0)
         pdf_total_tokens = pdf_input_tokens + pdf_output_tokens
 
-        # 침해 분석 비용 (analyzer_instance에서 발생)
+        # Infringement analysis cost (from analyzer_instance)
         infringement_input_tokens = analyzer_instance.total_input_tokens
         infringement_output_tokens = analyzer_instance.total_output_tokens
         infringement_cost = analyzer_instance.total_cost
         infringement_tokens = infringement_input_tokens + infringement_output_tokens
 
-        # 전체 합산
+        # Total aggregation
         total_cost = pdf_cost + infringement_cost
         total_tokens = pdf_total_tokens + infringement_tokens
 
@@ -172,11 +172,34 @@ async def perform_pdf_analysis_background(
         print(f"[PDF Upload] Infringement Analysis: ${infringement_cost:.4f} ({infringement_tokens:,} tokens)")
         print(f"[PDF Upload] Total: ${total_cost:.4f} ({total_tokens:,} tokens)")
 
-        # Prepare result JSON
+        # Prepare result JSON (use same values as console output)
         result_json = {
             "success": True,
             "request_id": request_id,
             "filename": file_filename,
+            "processing_time_seconds": processing_time,
+            "cost": {
+                "pdf_analysis": pdf_cost,
+                "infringement_analysis": infringement_cost,
+                "total": total_cost
+            },
+            "tokens": {
+                "pdf_analysis": {
+                    "input": pdf_input_tokens,
+                    "output": pdf_output_tokens,
+                    "total": pdf_total_tokens
+                },
+                "infringement_analysis": {
+                    "input": infringement_input_tokens,
+                    "output": infringement_output_tokens,
+                    "total": infringement_tokens
+                },
+                "total": {
+                    "input": pdf_input_tokens + infringement_input_tokens,
+                    "output": pdf_output_tokens + infringement_output_tokens,
+                    "total": total_tokens
+                }
+            },
             "analysis": {
                 "title": analysis_result.title,
                 "applicant": analysis_result.applicant,
@@ -234,9 +257,9 @@ async def perform_pdf_analysis_background(
         )
 
     except CancelledException as e:
-        # 취소 처리 (이미 cancelled 상태이므로 추가 작업 불필요)
+        # Handle cancellation (already in cancelled state, no additional work needed)
         print(f"[PDF Upload] Analysis cancelled: {request_id}")
-        # 임시 파일 정리
+        # Clean up temporary files
         try:
             if temp_permanent_filepath.exists():
                 os.remove(temp_permanent_filepath)
@@ -253,7 +276,7 @@ async def perform_pdf_analysis_background(
         print(f"[PDF Upload] Error: {e}")
         traceback.print_exc()
 
-        # 에러 시 파일 정리
+        # Clean up files on error
         try:
             if permanent_filepath and permanent_filepath.exists():
                 os.remove(permanent_filepath)
@@ -263,7 +286,7 @@ async def perform_pdf_analysis_background(
             print(f"[PDF Upload] Warning: Could not clean up after error: {cleanup_e}")
 
     finally:
-        # 임시 파일 삭제
+        # Delete temporary file
         try:
             if temp_filepath.exists():
                 os.remove(temp_filepath)
@@ -273,7 +296,7 @@ async def perform_pdf_analysis_background(
 
 
 class PDFUploadAnalysisRequest(BaseModel):
-    """PDF 업로드 분석 요청 스키마"""
+    """PDF upload analysis request schema"""
     max_candidates: int = 10
     create_detailed_chart: bool = True
     model: str = "gpt-5"
@@ -290,21 +313,21 @@ async def upload_pdf_analysis(
     follow_up_questions: Optional[str] = Form(None)
 ):
     """
-    PDF 파일을 업로드하여 특허 침해 분석 수행 (백그라운드)
+    Upload PDF file for patent infringement analysis (background processing)
 
-    분석은 백그라운드에서 실행되며, 즉시 request_id를 반환합니다.
-    /analysis-status/{request_id}로 상태를 확인하고,
-    /cancel-analysis/{request_id}로 취소할 수 있습니다.
+    Analysis runs in the background and returns request_id immediately.
+    Check status via /analysis-status/{request_id}
+    Cancel via /cancel-analysis/{request_id}
 
     Args:
-        file: PDF 파일 (multipart/form-data)
-        max_candidates: 최대 침해 후보 수
-        create_detailed_chart: 상세 Claim Chart 생성 여부
-        model: 사용할 AI 모델 (gpt-5, gpt-4o, etc.)
-        follow_up_questions: 추가 질문 (JSON 문자열 또는 쉼표로 구분)
+        file: PDF file (multipart/form-data)
+        max_candidates: Maximum number of infringement candidates
+        create_detailed_chart: Whether to create detailed Claim Chart
+        model: AI model to use (gpt-5, gpt-4o, etc.)
+        follow_up_questions: Additional questions (JSON string or comma-separated)
 
     Returns:
-        request_id 및 상태 조회 URL
+        request_id and status check URL
     """
     import time as time_module
     import traceback
@@ -317,15 +340,15 @@ async def upload_pdf_analysis(
     print(f"[PDF Upload] AI Model: {model}")
     print(f"[PDF Upload] Follow-up Questions: {follow_up_questions}")
 
-    # Analyzer 확인
+    # Check analyzer
     if not analyzer_instance:
         raise HTTPException(500, "Analyzer not initialized - check API keys")
 
-    # 파일 확장자 확인
+    # Check file extension
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(400, "Only PDF files are allowed")
 
-    # Follow-up questions 파싱 (convert string to list by splitting on newlines)
+    # Parse follow-up questions (convert string to list by splitting on newlines)
     questions_list = None
     if follow_up_questions:
         # Split by newlines and filter out empty lines
@@ -344,17 +367,17 @@ async def upload_pdf_analysis(
 
     print(f"[PDF Upload] Request ID: {request_id}")
 
-    # 임시 파일 저장
+    # Save temporary file
     timestamp = int(time.time())
     temp_filename = f"upload_{timestamp}_{file.filename}"
     temp_filepath = UPLOAD_DIR / temp_filename
 
-    # 영구 보관용 파일명 (임시로 request_id 기반, 나중에 특허번호로 변경)
+    # Permanent file name (temporarily based on request_id, will be changed to patent number later)
     temp_permanent_filename = f"{request_id}_{file.filename}"
     temp_permanent_filepath = PATENT_PDF_DIR / temp_permanent_filename
     permanent_filepath = None  # Will be set after getting patent number
 
-    # 파일 저장
+    # Save file
     print(f"[PDF Upload] Saving uploaded file to: {temp_filepath}")
 
     with open(temp_filepath, "wb") as buffer:
@@ -363,11 +386,11 @@ async def upload_pdf_analysis(
     file_size = os.path.getsize(temp_filepath)
     print(f"[PDF Upload] File saved successfully ({file_size} bytes)")
 
-    # 임시 영구 보관용 복사본 생성
+    # Create temporary permanent copy
     shutil.copy2(temp_filepath, temp_permanent_filepath)
     print(f"[PDF Upload] Temporary permanent copy saved to: {temp_permanent_filepath}")
 
-    # 백그라운드 태스크로 분석 시작
+    # Start analysis as background task
     background_tasks.add_task(
         perform_pdf_analysis_background,
         request_id=request_id,
@@ -382,7 +405,7 @@ async def upload_pdf_analysis(
 
     print(f"[PDF Upload] Background analysis task started for request: {request_id}")
 
-    # 즉시 request_id 반환
+    # Return request_id immediately
     return JSONResponse(content={
         "success": True,
         "request_id": request_id,
@@ -395,13 +418,13 @@ async def upload_pdf_analysis(
 @router.post("/analyze-pdf-only")
 async def analyze_pdf_only(file: UploadFile = File(...)):
     """
-    PDF 파일만 분석 (침해 분석 없이 특허 정보만 추출)
+    Analyze PDF file only (extract patent information without infringement analysis)
 
     Args:
-        file: PDF 파일
+        file: PDF file
 
     Returns:
-        특허 정보 (제목, 청구항, 설명 등)
+        Patent information (title, claims, description, etc.)
     """
     import time as time_module
     import traceback
@@ -428,7 +451,7 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
     temp_filename = f"upload_{timestamp}_{file.filename}"
     temp_filepath = UPLOAD_DIR / temp_filename
 
-    # 영구 보관용 파일명 (임시로 request_id 기반, 나중에 특허번호로 변경)
+    # Permanent file name (temporarily based on request_id, will be changed to patent number later)
     temp_permanent_filename = f"{request_id}_{file.filename}"
     temp_permanent_filepath = PATENT_PDF_DIR / temp_permanent_filename
     permanent_filepath = None  # Will be set after getting patent number
@@ -436,20 +459,20 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
     start_time = time_module.time()
 
     try:
-        # 파일 저장
+        # Save file
         with open(temp_filepath, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
         print(f"[PDF Upload] File saved: {temp_filepath}")
 
-        # 임시 영구 보관용 복사본 생성
+        # Create temporary permanent copy
         shutil.copy2(temp_filepath, temp_permanent_filepath)
         print(f"[PDF Upload] Temporary permanent copy saved to: {temp_permanent_filepath}")
 
         # Update status to processing
         request_manager.update_status(request_id, "processing")
 
-        # PDF 분석
+        # Analyze PDF
         from main import analyze_pdf_file
         patent_data = await analyze_pdf_file(str(temp_filepath))
 
@@ -458,26 +481,26 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
 
         print(f"[PDF Upload] Analysis completed")
 
-        # 특허번호로 파일명 변경
+        # Rename file to patent number
         patent_number = patent_data.get('patent_number') or patent_data.get('issued_number') or "UNKNOWN"
-        # 파일명에 사용할 수 없는 문자 제거
+        # Remove invalid filename characters
         safe_patent_number = "".join(c for c in patent_number if c.isalnum() or c in ('-', '_'))
         permanent_filename = f"{safe_patent_number}.pdf"
         permanent_filepath = PATENT_PDF_DIR / permanent_filename
 
-        # 기존 파일이 있으면 삭제
+        # Remove existing file if present
         if permanent_filepath.exists():
             os.remove(permanent_filepath)
             print(f"[PDF Upload] Removed existing file: {permanent_filepath}")
 
-        # 임시 파일을 특허번호 파일명으로 변경
+        # Move temporary file to permanent location with patent number
         shutil.move(str(temp_permanent_filepath), str(permanent_filepath))
         print(f"[PDF Upload] Renamed to patent number: {permanent_filepath}")
 
         # Calculate processing time
         processing_time = time_module.time() - start_time
 
-        # 비용 및 토큰 집계 (PDF 분석만)
+        # Aggregate costs and tokens (PDF analysis only)
         pdf_input_tokens = patent_data.get('_input_tokens', 0)
         pdf_output_tokens = patent_data.get('_output_tokens', 0)
         pdf_cost = patent_data.get('_cost', 0.0)
@@ -485,11 +508,28 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
 
         print(f"[PDF Upload] PDF Analysis: ${pdf_cost:.4f} ({pdf_total_tokens:,} tokens)")
 
-        # Prepare result
+        # Prepare result JSON (use same values as console output)
         result_json = {
             "success": True,
             "request_id": request_id,
             "filename": file.filename,
+            "processing_time_seconds": processing_time,
+            "cost": {
+                "pdf_analysis": pdf_cost,
+                "total": pdf_cost
+            },
+            "tokens": {
+                "pdf_analysis": {
+                    "input": pdf_input_tokens,
+                    "output": pdf_output_tokens,
+                    "total": pdf_total_tokens
+                },
+                "total": {
+                    "input": pdf_input_tokens,
+                    "output": pdf_output_tokens,
+                    "total": pdf_total_tokens
+                }
+            },
             "patent_data": patent_data
         }
 
@@ -522,7 +562,7 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
         raise HTTPException(500, f"Analysis failed: {str(e)}")
 
     finally:
-        # 임시 파일만 삭제 (영구 보관용은 유지)
+        # Delete temporary file only (keep permanent copy)
         try:
             if temp_filepath.exists():
                 os.remove(temp_filepath)
@@ -530,15 +570,15 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
         except Exception as e:
             print(f"[PDF Upload] Warning: Could not delete temporary file: {e}")
 
-        # 에러 발생 시 영구 파일도 삭제
+        # Delete permanent file if error occurred
         try:
             req_data = request_manager.get_request(request_id)
             if req_data and req_data.get('status') in ['failed', 'cancelled']:
-                # permanent_filepath가 설정되었으면 삭제
+                # Delete permanent_filepath if set
                 if permanent_filepath and permanent_filepath.exists():
                     os.remove(permanent_filepath)
                     print(f"[PDF Upload] Permanent file deleted due to failure: {permanent_filepath}")
-                # 아직 특허번호로 변경되지 않았으면 temp_permanent_filepath 삭제
+                # If not yet renamed to patent number, delete temp_permanent_filepath
                 elif temp_permanent_filepath.exists():
                     os.remove(temp_permanent_filepath)
                     print(f"[PDF Upload] Temporary permanent file deleted due to failure: {temp_permanent_filepath}")
@@ -549,13 +589,13 @@ async def analyze_pdf_only(file: UploadFile = File(...)):
 @router.post("/cancel-analysis/{request_id}")
 async def cancel_analysis(request_id: str):
     """
-    진행 중인 분석 취소
+    Cancel ongoing analysis
 
     Args:
-        request_id: 취소할 요청 ID
+        request_id: Request ID to cancel
 
     Returns:
-        취소 성공 여부
+        Cancellation success status
     """
     success = request_manager.cancel_request(request_id)
 
@@ -565,7 +605,7 @@ async def cancel_analysis(request_id: str):
             "message": f"Request {request_id} cancelled successfully"
         })
     else:
-        # 요청이 없거나 이미 완료/취소된 경우
+        # Request not found or already completed/cancelled
         req_data = request_manager.get_request(request_id)
         if not req_data:
             raise HTTPException(404, f"Request {request_id} not found")
@@ -577,13 +617,13 @@ async def cancel_analysis(request_id: str):
 @router.get("/analysis-status/{request_id}")
 async def get_analysis_status(request_id: str):
     """
-    분석 요청 상태 조회
+    Query analysis request status
 
     Args:
-        request_id: 조회할 요청 ID
+        request_id: Request ID to query
 
     Returns:
-        요청 상태 정보
+        Request status information
     """
     req_data = request_manager.get_request(request_id)
 
@@ -606,11 +646,11 @@ async def get_analysis_status(request_id: str):
 
 @router.get("/upload-status")
 async def upload_status():
-    """업로드 기능 상태 확인"""
+    """Check upload functionality status"""
     return {
         "status": "ready",
         "upload_dir": str(UPLOAD_DIR),
         "analyzer_ready": analyzer_instance is not None,
         "supported_formats": [".pdf"],
-        "max_file_size_mb": 50  # 예시
+        "max_file_size_mb": 50  # Example value
     }

@@ -1,5 +1,5 @@
 """
-간소화된 특허 침해 분석 모듈
+Simplified Patent Infringement Analysis Module
 """
 
 from typing import List, Dict, Optional, Any
@@ -12,7 +12,7 @@ import re
 
 
 class InfringementCandidate(BaseModel):
-    """침해 가능성이 있는 제품/서비스 후보"""
+    """Product/service candidate with potential infringement"""
     company: str
     product_service: str
     matching_feature: str
@@ -22,7 +22,7 @@ class InfringementCandidate(BaseModel):
 
 
 class ClaimChartElement(BaseModel):
-    """Claim Chart 요소 모델"""
+    """Claim Chart element model"""
     claim_element: str
     product_feature: str
     comment: str
@@ -30,13 +30,13 @@ class ClaimChartElement(BaseModel):
 
 
 class FollowUpResponse(BaseModel):
-    """사용자 추가 요청에 대한 답변 모델"""
+    """Response model for user follow-up questions"""
     question: str
     answer: str
 
 
 class IndependentClaimAnalysis(BaseModel):
-    """개별 독립항 분석 결과 모델"""
+    """Individual independent claim analysis result model"""
     claim_number: str
     claim_original: str
     claim_korean: str
@@ -44,7 +44,7 @@ class IndependentClaimAnalysis(BaseModel):
 
 
 class PatentInfringementAnalysis(BaseModel):
-    """특허 침해 분석 결과 모델"""
+    """Patent infringement analysis result model"""
     title: Optional[str] = ""
     applicant: Optional[str] = ""
     issued_number: Optional[str] = ""
@@ -60,22 +60,22 @@ class PatentInfringementAnalysis(BaseModel):
 
 
 class SimplifiedInfringementAnalyzer:
-    """간소화된 특허 침해 분석기"""
+    """Simplified patent infringement analyzer"""
 
     def __init__(self, api_key: str, tavily_api_key: Optional[str] = None, max_concurrent_requests: int = 5):
         self.client = OpenAI(api_key=api_key)
-        self.async_client = AsyncOpenAI(api_key=api_key)  # 비동기 클라이언트 추가
+        self.async_client = AsyncOpenAI(api_key=api_key)  # Add async client
         self.model = "gpt-5"
 
-        # 토큰 사용량 추적
+        # Track token usage
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_cost = 0.0
 
-        # 동시 요청 제한 (Rate Limit 방지)
+        # Limit concurrent requests (prevent rate limit)
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
 
-        # Tavily 웹 검색 (선택사항)
+        # Tavily web search (optional)
         self.tavily_client = None
         if tavily_api_key:
             try:
@@ -86,7 +86,7 @@ class SimplifiedInfringementAnalyzer:
                 print("[Init] ✗ Web search disabled")
 
     def _track_tokens(self, response) -> None:
-        """API 응답에서 토큰 사용량 추적"""
+        """Track token usage from API response"""
         if hasattr(response, 'usage'):
             input_tokens = response.usage.prompt_tokens
             output_tokens = response.usage.completion_tokens
@@ -94,28 +94,28 @@ class SimplifiedInfringementAnalyzer:
             self.total_input_tokens += input_tokens
             self.total_output_tokens += output_tokens
 
-            # GPT-5 가격: Input $1.25/M, Output $10.00/M
+            # GPT-5 pricing: Input $1.25/M, Output $10.00/M
             cost = input_tokens * 1.25 / 1_000_000 + output_tokens * 10.00 / 1_000_000
             self.total_cost += cost
 
     def _reset_token_tracking(self) -> None:
-        """토큰 추적 초기화"""
+        """Reset token tracking"""
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_cost = 0.0
 
     def _extract_claim_text(self, claim_full: str, claim_num: str) -> str:
         """
-        청구항에서 번호를 제외한 실제 텍스트만 추출
+        Extract actual text from claim, excluding the number
 
         Args:
-            claim_full: 전체 청구항 텍스트 (예: "1. A method..." or "청구항 1. ...")
-            claim_num: 청구항 번호 (예: "1")
+            claim_full: Full claim text (e.g., "1. A method..." or "청구항 1. ...")
+            claim_num: Claim number (e.g., "1")
 
         Returns:
-            청구항 텍스트 (번호 제외)
+            Claim text (without number)
         """
-        # 다양한 형식 처리: "1.", "1)", "청구항 1.", "Claim 1." 등
+        # Handle various formats: "1.", "1)", "청구항 1.", "Claim 1.", etc.
         patterns = [
             rf'^{claim_num}[\.\)]\s*',  # "1. " or "1) "
             rf'^청구항\s*{claim_num}\s*[:\.]\s*',  # "청구항 1: " or "청구항 1. "
@@ -132,65 +132,65 @@ class SimplifiedInfringementAnalyzer:
 
     async def identify_independent_claims(self, claims: List[str]) -> List[Dict[str, Any]]:
         """
-        독립항 식별 (최적화된 2단계 검증)
+        Identify independent claims (optimized 2-step verification)
 
-        전략:
-        1. 룰 기반 사전 필터링 (강화된 패턴 매칭)
-        2. AI 단일 검증 (명확한 프롬프트)
+        Strategy:
+        1. Rule-based pre-filtering (enhanced pattern matching)
+        2. AI single verification (clear prompt)
 
         Args:
-            claims: 청구항 리스트
+            claims: List of claims
 
         Returns:
-            독립항 리스트 [{"number": "1", "text": "...", "full_text": "1. ..."}]
+            Independent claims list [{"number": "1", "text": "...", "full_text": "1. ..."}]
         """
         print("[Claims] Identifying independent claims...")
 
         if not claims:
             return []
 
-        # Step 1: 강화된 룰 기반 필터링
+        # Step 1: Enhanced rule-based filtering
         print("[Claims] Rule-based filtering...")
 
         definitely_dependent = set()
         possibly_independent = {}  # number -> full claim text
 
         for claim in claims:
-            # 취소/삭제된 청구항 제외
+            # Exclude cancelled/deleted claims
             claim_lower = claim.lower()
             if len(claim) < 50:
                 continue
 
-            # 다양한 취소/삭제 표현 체크 (영국식/미국식 철자, 괄호 유무 모두 처리)
+            # Check for various cancelled/deleted expressions (handle both British/American spelling, with/without parentheses)
             cancelled_keywords = [
-                "cancelled", "canceled",  # 취소됨
-                "deleted", "withdrawn",    # 삭제/철회됨
-                "void", "removed"          # 무효/제거됨
+                "cancelled", "canceled",  # Cancelled
+                "deleted", "withdrawn",    # Deleted/withdrawn
+                "void", "removed"          # Void/removed
             ]
             if any(keyword in claim_lower for keyword in cancelled_keywords):
                 continue
 
-            # 청구항 번호 추출 (다양한 형식 지원)
+            # Extract claim number (support various formats)
             claim_num = None
 
-            # 형식 1: "1. ..." 또는 "1) ..."
+            # Format 1: "1. ..." or "1) ..."
             match = re.match(r'^(\d+)[\.\)]\s', claim)
             if match:
                 claim_num = match.group(1)
 
-            # 형식 2: "청구항 1. ..." 또는 "청구항 1: ..."
+            # Format 2: "청구항 1. ..." or "청구항 1: ..."
             if not claim_num:
                 match = re.match(r'^청구항\s*(\d+)\s*[:\.]\s', claim)
                 if match:
                     claim_num = match.group(1)
 
-            # 형식 3: "제1항. ..." 또는 "제 1 항. ..."
+            # Format 3: "제1항. ..." or "제 1 항. ..."
             if not claim_num:
                 match = re.match(r'^제\s*(\d+)\s*항\s*[:\.]\s', claim)
                 if match:
                     claim_num = match.group(1)
 
-            # 형식 4: "Claim 1. ..." 또는 "Claim 1: ..."
+            # Format 4: "Claim 1. ..." or "Claim 1: ..."
             if not claim_num:
                 match = re.match(r'^Claim\s+(\d+)\s*[:\.]\s', claim, re.IGNORECASE)
                 if match:
@@ -199,10 +199,10 @@ class SimplifiedInfringementAnalyzer:
             if not claim_num:
                 continue
 
-            # 강화된 종속항 패턴 체크
+            # Enhanced dependent claim pattern check
             is_dependent = False
 
-            # 청구항 번호 제거하여 순수 텍스트만 추출
+            # Remove claim number to extract pure text
             claim_text_only = claim.strip()
             for prefix_pattern in [
                 rf'^{claim_num}[\.\)]\s*',
@@ -214,7 +214,7 @@ class SimplifiedInfringementAnalyzer:
 
             claim_text_lower = claim_text_only.lower()
 
-            # 영어 종속항 패턴 - 문장 시작 부분 우선 체크
+            # English dependent claim patterns - check sentence start first
             english_strong_patterns = [
                 r'^the\s+\w+\s+(of|in|according\s+to|as\s+defined\s+in)\s+claim\s+\d+',
                 r'^according\s+to\s+(any\s+one\s+of\s+)?claims?\s+\d+',
@@ -226,7 +226,7 @@ class SimplifiedInfringementAnalyzer:
                     is_dependent = True
                     break
 
-            # 영어 종속항 패턴 - 문장 어디서든
+            # English dependent claim patterns - anywhere in sentence
             if not is_dependent:
                 english_patterns = [
                     r'of\s+claims?\s+\d+',
@@ -242,7 +242,7 @@ class SimplifiedInfringementAnalyzer:
                         is_dependent = True
                         break
 
-            # 한국어 종속항 패턴
+            # Korean dependent claim patterns
             if not is_dependent:
                 korean_patterns = [
                     r'^제\s*\d+\s*항에',
@@ -394,7 +394,7 @@ Return ONLY valid JSON."""
             return independent_claims
 
     async def summarize_technology(self, patent_data: Dict) -> str:
-        """기술 요약 생성"""
+        """Generate technology summary"""
         print("[Tech Summary] Generating summary...")
 
         title = patent_data.get("title", "")
@@ -436,12 +436,12 @@ Description: {description[:500]}
         tech_summary: str,
         max_candidates: int = 5
     ) -> List[InfringementCandidate]:
-        """잠재적 침해자 검색"""
+        """Search for potential infringers"""
         print(f"[Infringers] Searching for potential infringers...")
 
         title = patent_data.get("title", "")
 
-        # 웹 검색 사용 가능하면 사용
+        # Use web search if available
         if self.tavily_client:
             print("[Infringers] Using web search...")
             try:
@@ -458,10 +458,10 @@ Description: {description[:500]}
         else:
             web_context = ""
 
-        # 출원인 정보 추출
+        # Extract applicant information
         applicant = patent_data.get("assignee", "") or patent_data.get("applicant", "")
 
-        # 간결하고 명확한 프롬프트 (한국어 응답)
+        # Concise and clear prompt (Korean response)
         prompt = f"""Analyze patent for potential infringement.
 
 PATENT:
@@ -607,8 +607,8 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
             return []
 
     async def translate_claim_async(self, claim_text: str) -> str:
-        """청구항 번역 (비동기 버전 - 병렬 처리용)"""
-        # 한국어인지 체크
+        """Translate claim (async version - for parallel processing)"""
+        # Check if Korean
         if re.search(r'[가-힣]', claim_text):
             return claim_text
 
@@ -628,7 +628,7 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
             return claim_text  # 실패 시 원문 반환
 
     async def translate_claims_batch(self, claims_texts: List[str], batch_size: int = 10) -> List[str]:
-        """청구항 배치 번역 (병렬 처리)"""
+        """Batch translate claims (parallel processing)"""
         all_translations = []
         total_batches = (len(claims_texts) + batch_size - 1) // batch_size
 
@@ -649,10 +649,10 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
         return all_translations
 
     def translate_claim(self, claim_text: str) -> str:
-        """청구항 번역 (영어 → 한국어, 한국어 → 유지) - 동기 버전 (하위 호환성)"""
+        """Translate claim (English → Korean, Korean → keep) - sync version (backward compatibility)"""
         print("[Translation] Translating claim...")
 
-        # 한국어인지 체크
+        # Check if Korean
         if re.search(r'[가-힣]', claim_text):
             print("[Translation] Already in Korean, skipping")
             return claim_text
@@ -685,7 +685,7 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
         product: str,
         patent_data: Dict
     ) -> tuple:
-        """Claim Chart 생성 (Rate Limit 제한 포함)"""
+        """Generate Claim Chart (with rate limit control)"""
         async with self.semaphore:
             print(f"[Claim Chart] Creating chart for Claim {claim_num}...")
             result = await self.create_claim_chart(claim_text, company, product, patent_data)
@@ -699,7 +699,7 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
         product: str,
         patent_data: Dict
     ) -> List[ClaimChartElement]:
-        """Claim Chart 생성 (간소화)"""
+        """Generate Claim Chart (simplified)"""
         prompt = f"""Create a claim chart comparing the patent claim with the product IN KOREAN.
 
 Patent Claim (Korean):
@@ -760,7 +760,7 @@ Return ONLY valid JSON."""
             return []
 
     async def answer_follow_up_question_with_limit(self, question: str, patent_data: Dict, analysis_context: str, index: int, total: int) -> FollowUpResponse:
-        """추가 질문 답변 (Rate Limit 제한 포함)"""
+        """Answer follow-up question (with rate limit control)"""
         async with self.semaphore:
             print(f"[Follow-up] Processing question {index}/{total}...")
             answer = await self.answer_follow_up_question(question, patent_data, analysis_context)
@@ -768,7 +768,7 @@ Return ONLY valid JSON."""
             return FollowUpResponse(question=question, answer=answer)
 
     async def answer_follow_up_question(self, question: str, patent_data: Dict, analysis_context: str) -> str:
-        """사용자의 추가 질문에 답변"""
+        """Answer user's follow-up question"""
         prompt = f"""You are a world-class patent and business analyst. You have already performed an initial patent analysis. Now, answer the user's follow-up question based on the provided context.
 
 **INITIAL ANALYSIS CONTEXT:**
@@ -821,8 +821,8 @@ Return ONLY valid JSON."""
         model: str = "gpt-5",
         follow_up_questions: Optional[List[str]] = None
     ) -> PatentInfringementAnalysis:
-        """전체 침해 분석 수행 (최적화 버전 - 비동기)"""
-        # 모델 설정 (요청별로 다른 모델 사용 가능)
+        """Perform complete infringement analysis (optimized version - async)"""
+        # Model configuration (can use different models per request)
         original_model = self.model
         self.model = model
 
@@ -834,10 +834,10 @@ Return ONLY valid JSON."""
         print("="*60)
 
         start_time = time.time()
-        self._reset_token_tracking()  # 토큰 추적 초기화
+        self._reset_token_tracking()  # Reset token tracking
 
         try:
-            # 1. 메타데이터 추출
+            # 1. Extract metadata
             metadata = {
                 "title": patent_data.get("title", ""),
                 "applicant": patent_data.get("assignee", ""),
@@ -845,10 +845,10 @@ Return ONLY valid JSON."""
                 "application_date": patent_data.get("filing_date", "N/A")
             }
 
-            # 2. 독립항 식별
+            # 2. Identify independent claims
             claims = patent_data.get("claims", [])
 
-            # 취소/삭제된 청구항 사전 필터링
+            # Pre-filter cancelled/deleted claims
             cancelled_keywords = ["cancelled", "canceled", "deleted", "withdrawn", "void", "removed"]
             valid_claims = []
             for claim in claims:
@@ -859,7 +859,7 @@ Return ONLY valid JSON."""
 
             print(f"\n[Analysis] Processing {len(valid_claims)} valid claim(s) (filtered {len(claims) - len(valid_claims)} cancelled)")
 
-            # 2 & 3. 독립항 식별 + 기술 요약 (병렬 처리)
+            # 2 & 3. Identify independent claims + Summarize technology (parallel processing)
             print(f"[Analysis] Step 1: Identifying claims & summarizing tech (parallel)...")
             independent_claims_data, tech_summary = await asyncio.gather(
                 self.identify_independent_claims(valid_claims),
@@ -871,21 +871,21 @@ Return ONLY valid JSON."""
 
             print(f"[Analysis] ✓ Step 1 completed: {len(independent_claims_data)} independent claims, tech summary ready")
 
-            # 4. 침해자 검색
+            # 4. Search for infringers
             print(f"\n[Analysis] Step 2: Searching for potential infringers...")
             first_claim = independent_claims_data[0]["text"]
             candidates = await self.find_potential_infringers(
                 patent_data, first_claim, tech_summary, max_candidates
             )
 
-            # 5. 각 독립항 분석 (병렬 처리 최적화)
+            # 5. Analyze each independent claim (optimized parallel processing)
             print(f"\n[Analysis] Step 3: Analyzing {len(independent_claims_data)} independent claim(s)...")
 
-            # 한국어 특허인지 체크 (한 번만 체크)
+            # Check if Korean patent (check only once)
             is_korean_patent = bool(re.search(r'[가-힣]', first_claim))
             print(f"[Analysis] Patent language: {'Korean' if is_korean_patent else 'English/Other'}")
 
-            # 번역 배치 처리 (10개씩 병렬 처리 - 속도 향상)
+            # Batch translation processing (10 at a time in parallel - speed improvement)
             if is_korean_patent:
                 print("[Analysis] Translation: Skipped (already Korean)")
                 translations = [claim["text"] for claim in independent_claims_data]
@@ -895,13 +895,13 @@ Return ONLY valid JSON."""
                 translations = await self.translate_claims_batch(claim_texts, batch_size=10)
                 print(f"[Analysis] ✓ Translation completed")
 
-            # Claim Chart 병렬 생성
+            # Generate Claim Charts in parallel
             independent_claim_analyses = []
             if create_detailed_chart and candidates:
                 print(f"\n[Analysis] Step 4: Creating claim charts for {len(independent_claims_data)} claim(s) in parallel...")
                 top_candidate = candidates[0]
 
-                # 모든 claim chart를 병렬로 생성
+                # Generate all claim charts in parallel
                 chart_tasks = [
                     self.create_claim_chart_with_limit(
                         ind_claim["number"],
@@ -915,7 +915,7 @@ Return ONLY valid JSON."""
 
                 chart_results = await asyncio.gather(*chart_tasks)
 
-                # 결과 조합
+                # Combine results
                 for ind_claim, claim_korean, (_, claim_chart) in zip(independent_claims_data, translations, chart_results):
                     independent_claim_analyses.append(IndependentClaimAnalysis(
                         claim_number=ind_claim["number"],
@@ -926,7 +926,7 @@ Return ONLY valid JSON."""
 
                 print(f"[Analysis] ✓ Step 4 completed: All claim charts created")
             else:
-                # Claim chart 없이 분석 결과 생성
+                # Generate analysis results without claim charts
                 for ind_claim, claim_korean in zip(independent_claims_data, translations):
                     independent_claim_analyses.append(IndependentClaimAnalysis(
                         claim_number=ind_claim["number"],
@@ -936,7 +936,7 @@ Return ONLY valid JSON."""
                     ))
                 print(f"[Analysis] Skipping claim charts (no candidates or disabled)")
 
-            # 6. 추가 질문 답변 (병렬 처리)
+            # 6. Answer follow-up questions (parallel processing)
             follow_up_responses = []
             if follow_up_questions:
                 print(f"\n[Analysis] Step 5: Answering {len(follow_up_questions)} follow-up question(s) in parallel...")
@@ -948,7 +948,7 @@ Return ONLY valid JSON."""
 - Potentially Matching Companies Found: {', '.join([c.company for c in candidates]) if candidates else 'None'}
 - Top Candidate: {candidates[0].company if candidates else 'N/A'} (Product: {candidates[0].product_service if candidates else 'N/A'})"""
 
-                # 모든 질문을 병렬로 처리
+                # Process all questions in parallel
                 followup_tasks = [
                     self.answer_follow_up_question_with_limit(
                         question, patent_data, analysis_context, idx + 1, len(follow_up_questions)
@@ -994,12 +994,12 @@ Return ONLY valid JSON."""
             traceback.print_exc()
             raise
         finally:
-            # 원래 모델로 복원
+            # Restore original model
             self.model = original_model
 
 
 def format_analysis_report(analysis: PatentInfringementAnalysis) -> str:
-    """분석 결과를 마크다운 보고서로 포맷팅"""
+    """Format analysis results as markdown report"""
     report = f"""# Patent Infringement Analysis Report
 
 ## 1. Patent Information

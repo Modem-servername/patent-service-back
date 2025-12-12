@@ -1,6 +1,6 @@
 """
-분석 요청 관리 모듈
-UUID 기반 요청 추적, 상태 관리, 취소 기능
+Analysis Request Management Module
+UUID-based request tracking, status management, cancellation functionality
 """
 
 import sqlite3
@@ -16,7 +16,7 @@ DB_PATH = Path("analysis_requests.db")
 
 @contextmanager
 def get_db_connection():
-    """DB 연결 컨텍스트 매니저"""
+    """Database connection context manager"""
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row  # dict-like access
     try:
@@ -26,50 +26,50 @@ def get_db_connection():
 
 
 def init_database():
-    """데이터베이스 초기화 및 테이블 생성"""
+    """Initialize database and create tables"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # 분석 요청 테이블
+        # Analysis request table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS analysis_requests (
                 request_id TEXT PRIMARY KEY,
                 patent_number TEXT,
                 input_type TEXT,  -- 'patent_number' or 'pdf_upload'
-                filename TEXT,  -- PDF 업로드 시 파일명
+                filename TEXT,  -- Filename for PDF uploads
 
-                -- 요청 파라미터
+                -- Request parameters
                 max_candidates INTEGER,
                 create_detailed_chart BOOLEAN,
                 model TEXT,
                 follow_up_questions TEXT,  -- JSON array
 
-                -- 상태
+                -- Status
                 status TEXT,  -- 'pending', 'processing', 'completed', 'failed', 'cancelled'
 
-                -- 결과
-                result_json TEXT,  -- 전체 분석 결과 JSON
+                -- Results
+                result_json TEXT,  -- Full analysis result JSON
                 markdown_report TEXT,
-                pdf_file_path TEXT,  -- 원본 특허 PDF 파일 경로
+                pdf_file_path TEXT,  -- Original patent PDF file path
 
-                -- 메타데이터
+                -- Metadata
                 created_at TEXT,
                 started_at TEXT,
                 completed_at TEXT,
                 cancelled_at TEXT,
 
-                -- 통계
+                -- Statistics
                 processing_time_seconds REAL,
                 total_cost REAL,
                 total_tokens INTEGER,
 
-                -- 에러
+                -- Errors
                 error_message TEXT,
                 error_traceback TEXT
             )
         """)
 
-        # 인덱스 생성
+        # Create indexes
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_status
             ON analysis_requests(status)
@@ -98,10 +98,10 @@ def create_request(
     follow_up_questions: Optional[str] = None  # Changed from list to str
 ) -> str:
     """
-    새 분석 요청 생성 및 DB 저장
+    Create new analysis request and save to DB
 
     Returns:
-        request_id (str): 생성된 UUID
+        request_id (str): Generated UUID
     """
     request_id = str(uuid.uuid4())
 
@@ -138,7 +138,7 @@ def create_request(
 
 
 def update_status(request_id: str, status: str):
-    """요청 상태 업데이트"""
+    """Update request status"""
     timestamp_field = None
     if status == "processing":
         timestamp_field = "started_at"
@@ -177,18 +177,18 @@ def save_result(
     total_tokens: int,
     pdf_file_path: Optional[str] = None
 ):
-    """분석 결과 저장 (정확한 처리 시간 자동 계산)"""
+    """Save analysis results (automatically calculates accurate processing time)"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # 정확한 처리 시간 계산: started_at과 현재 시간의 차이
+        # Calculate accurate processing time: difference between started_at and current time
         cursor.execute("""
             SELECT started_at FROM analysis_requests
             WHERE request_id = ?
         """, (request_id,))
         row = cursor.fetchone()
 
-        accurate_processing_time = processing_time  # 기본값
+        accurate_processing_time = processing_time  # Default value
         if row and row[0]:
             started_at_str = row[0]
             try:
@@ -227,7 +227,7 @@ def save_result(
 
 
 def save_error(request_id: str, error_message: str, traceback_str: Optional[str] = None):
-    """에러 정보 저장"""
+    """Save error information"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -250,7 +250,7 @@ def save_error(request_id: str, error_message: str, traceback_str: Optional[str]
 
 
 def get_request(request_id: str) -> Optional[Dict]:
-    """요청 정보 조회"""
+    """Query request information"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -266,13 +266,13 @@ def get_request(request_id: str) -> Optional[Dict]:
 
 def is_cancelled(request_id: str) -> bool:
     """
-    요청이 취소되었는지 확인
+    Check if request has been cancelled
 
     Args:
-        request_id: 요청 ID
+        request_id: Request ID
 
     Returns:
-        bool: 취소되었으면 True, 아니면 False
+        bool: True if cancelled, False otherwise
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -290,15 +290,15 @@ def is_cancelled(request_id: str) -> bool:
 
 def cancel_request(request_id: str) -> bool:
     """
-    요청 취소
+    Cancel request
 
     Returns:
-        bool: 취소 성공 여부
+        bool: Cancellation success status
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # 현재 상태 확인
+        # Check current status
         cursor.execute("""
             SELECT status FROM analysis_requests
             WHERE request_id = ?
@@ -310,12 +310,12 @@ def cancel_request(request_id: str) -> bool:
 
         current_status = row[0]
 
-        # 이미 완료되었거나 실패한 요청은 취소 불가
+        # Cannot cancel requests that are already completed or failed
         if current_status in ["completed", "failed", "cancelled"]:
             print(f"[Request Manager] Cannot cancel {request_id}: already {current_status}")
             return False
 
-        # 취소 처리
+        # Process cancellation
         cursor.execute("""
             UPDATE analysis_requests
             SET status = ?, cancelled_at = ?
@@ -333,12 +333,12 @@ def get_all_requests(
     offset: int = 0
 ) -> list:
     """
-    모든 요청 조회 (페이징)
+    Query all requests (with pagination)
 
     Args:
-        status: 특정 상태만 필터링 (선택)
-        limit: 최대 개수
-        offset: 시작 위치
+        status: Filter by specific status (optional)
+        limit: Maximum number of results
+        offset: Starting position
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -362,7 +362,7 @@ def get_all_requests(
 
 
 def delete_request(request_id: str) -> bool:
-    """요청 삭제 (관리자용)"""
+    """Delete request (admin only)"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -378,15 +378,15 @@ def delete_request(request_id: str) -> bool:
 
 
 def get_statistics() -> Dict:
-    """통계 정보 조회"""
+    """Query statistics information"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # 전체 요청 수
+        # Total request count
         cursor.execute("SELECT COUNT(*) FROM analysis_requests")
         total = cursor.fetchone()[0]
 
-        # 상태별 개수
+        # Count by status
         cursor.execute("""
             SELECT status, COUNT(*)
             FROM analysis_requests
@@ -394,7 +394,7 @@ def get_statistics() -> Dict:
         """)
         status_counts = {row[0]: row[1] for row in cursor.fetchall()}
 
-        # 총 비용
+        # Total cost
         cursor.execute("""
             SELECT SUM(total_cost)
             FROM analysis_requests
@@ -402,7 +402,7 @@ def get_statistics() -> Dict:
         """)
         total_cost = cursor.fetchone()[0] or 0.0
 
-        # 평균 처리 시간
+        # Average processing time
         cursor.execute("""
             SELECT AVG(processing_time_seconds)
             FROM analysis_requests
@@ -420,10 +420,10 @@ def get_statistics() -> Dict:
 
 def cleanup_stale_requests(timeout_minutes: int = 60):
     """
-    서버 시작 시 오래된 pending/processing 요청들을 정리
+    Clean up old pending/processing requests at server startup
 
     Args:
-        timeout_minutes: 이 시간(분) 이상 지난 요청을 stale로 간주
+        timeout_minutes: Consider requests older than this as stale (in minutes)
     """
     from datetime import datetime, timedelta
 
@@ -432,7 +432,7 @@ def cleanup_stale_requests(timeout_minutes: int = 60):
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # Stale 요청 찾기 (pending 또는 processing 상태이면서 오래된 것들)
+        # Find stale requests (pending or processing and older than timeout)
         cursor.execute("""
             SELECT request_id, status, created_at, started_at
             FROM analysis_requests
@@ -451,7 +451,7 @@ def cleanup_stale_requests(timeout_minutes: int = 60):
 
         print(f"[Request Manager] Found {len(stale_requests)} stale request(s), marking as failed...")
 
-        # Stale 요청들을 failed로 변경
+        # Mark stale requests as failed
         for row in stale_requests:
             request_id = row[0]
             status = row[1]
@@ -475,8 +475,8 @@ def cleanup_stale_requests(timeout_minutes: int = 60):
         print(f"[Request Manager] Cleanup complete: {len(stale_requests)} request(s) marked as failed")
 
 
-# 앱 시작 시 DB 초기화
+# Initialize DB at app startup
 init_database()
 
-# 서버 시작 시 stale 요청 정리 (60분 이상 pending/processing 상태인 것들)
+# Clean up stale requests at server startup (pending/processing for 60+ minutes)
 cleanup_stale_requests(timeout_minutes=60)

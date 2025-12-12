@@ -38,7 +38,7 @@ load_dotenv()
 
 app = FastAPI(title="Complete Patent Analysis API with Infringement Detection")
 
-# PDF Upload router import (나중에 초기화)
+# PDF Upload router import (initialized later)
 pdf_upload_router = None
 
 
@@ -50,7 +50,7 @@ if OPENAI_API_KEY and OPENAI_API_KEY != "your_api_key_here":
     infringement_analyzer = SimplifiedInfringementAnalyzer(
         api_key=OPENAI_API_KEY,
         tavily_api_key=TAVILY_API_KEY,
-        max_concurrent_requests=15  # 병렬 처리 성능 향상 (기본값 5 → 15)
+        max_concurrent_requests=15  # Enhanced parallel processing (default 5 → 15)
     )
     print("api key loaded")
     if TAVILY_API_KEY and TAVILY_API_KEY != "your_tavily_api_key_here":
@@ -58,7 +58,7 @@ if OPENAI_API_KEY and OPENAI_API_KEY != "your_api_key_here":
     else:
         print("tavily api key not found - web search disabled")
 
-    # PDF Upload router 초기화
+    # Initialize PDF Upload router
     try:
         from pdf_upload_handler import router as upload_router, init_analyzer
         init_analyzer(OPENAI_API_KEY, TAVILY_API_KEY)
@@ -92,7 +92,7 @@ PDF_URL_CACHE_TTL = 86400  # 24 hours in seconds
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# 프로젝트 루트 디렉토리 (main.py가 있는 위치)
+# Project root directory (where main.py is located)
 BASE_DIR = Path(__file__).parent.resolve()
 
 PDF_DIR = BASE_DIR / "downloaded_patents"
@@ -168,16 +168,16 @@ async def get_pdf_url_from_page(patent_number: str) -> Optional[str]:
             if pdf_link and pdf_link.get('href'):
                 return _cache_pdf_url(patent_number, pdf_link['href'])
 
-            # 정규표현식 개선: kind code가 없는 경우도 처리 (예: KR10055894381)
+            # Improved regex: handle cases without kind code (e.g., KR10055894381)
             match = re.match(r'([A-Z]{2})(\d+)([A-Z]\d*)?', patent_number)
             if match:
                 country, number, kind = match.groups()
                 last_two = number[-2:] if len(number) >= 2 else number
 
-                # kind code가 없는 경우 처리
+                # Handle case without kind code
                 if not kind:
                     print(f"[Patent] Warning: No kind code found for {patent_number}, trying without it")
-                    # 일반적인 kind code 시도 (B1, B2 등)
+                    # Try common kind codes (B1, B2, etc.)
                     for default_kind in ['B1', 'B2', 'A1', 'A']:
                         test_patent_number = f"{country}{number}{default_kind}"
                         test_url = f"https://patentimages.storage.googleapis.com/{last_two}/{number}/{test_patent_number}.pdf"
@@ -190,7 +190,7 @@ async def get_pdf_url_from_page(patent_number: str) -> Optional[str]:
                         except:
                             continue
 
-                    # kind code 없이 시도
+                    # Try without kind code
                     fallback_url = f"https://patentimages.storage.googleapis.com/{last_two}/{number}/{patent_number}.pdf"
                     return _cache_pdf_url(patent_number, fallback_url)
 
@@ -229,7 +229,7 @@ def resize_image(img: Image.Image, max_size: int = 1536) -> Image.Image:
         return img.resize((int(w * max_size / h), max_size), Image.Resampling.LANCZOS)
 
 def _convert_single_page(pdf_path: str, page_num: int, max_size: int) -> tuple:
-    """단일 페이지 변환 (병렬 처리용 헬퍼 함수)"""
+    """Convert single page (helper function for parallel processing)"""
     doc = None
     try:
         doc = fitz.open(pdf_path)
@@ -249,7 +249,7 @@ def _convert_single_page(pdf_path: str, page_num: int, max_size: int) -> tuple:
             doc.close()
 
 def convert_pages(pdf_path: str, max_size: int = 1024, patent_number: Optional[str] = None) -> List[Image.Image]:
-    """convert all pdf pages to images (병렬 처리, 캐싱 지원)"""
+    """Convert all pdf pages to images (parallel processing, caching support)"""
     try:
         # Check cache first if patent_number is provided
         if patent_number:
@@ -275,16 +275,16 @@ def convert_pages(pdf_path: str, max_size: int = 1024, patent_number: Optional[s
                         print(f"  cache load failed: {e}, regenerating...")
                         cached_images = []  # Clear partial results
 
-        # 총 페이지 수 확인
+        # Check total page count
         doc = fitz.open(pdf_path)
         total_pages = len(doc)
         doc.close()
 
         print(f"  converting {total_pages} pages in parallel...")
 
-        # 병렬로 페이지 변환
+        # Convert pages in parallel
         results = {}
-        max_workers = min(8, total_pages)  # 최대 8개 워커
+        max_workers = min(8, total_pages)  # Maximum 8 workers
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
@@ -306,7 +306,7 @@ def convert_pages(pdf_path: str, max_size: int = 1024, patent_number: Optional[s
 
                 results[page_num] = img
 
-        # 순서대로 정렬
+        # Sort by order
         images = [results[i] for i in range(total_pages) if i in results]
 
         print(f"  ✓ conversion complete: {len(images)}/{total_pages} pages")
@@ -469,13 +469,13 @@ def parse_json_safely(json_text: str) -> Optional[Dict]:
 
 def _merge_batch_results(batch_results: List[Dict]) -> Dict:
     """
-    여러 배치의 분석 결과를 하나로 병합
+    Merge multiple batch analysis results into one
 
     Args:
-        batch_results: 각 배치의 분석 결과 리스트
+        batch_results: List of analysis results from each batch
 
     Returns:
-        병합된 분석 결과
+        Merged analysis result
     """
     if not batch_results:
         return {'success': False, 'error': 'No batch results to merge'}
@@ -485,11 +485,11 @@ def _merge_batch_results(batch_results: List[Dict]) -> Dict:
 
     print(f"  [Merge] Combining {len(batch_results)} batch results...")
 
-    # 첫 번째 배치를 기본으로 사용 (보통 title, abstract 등이 있음)
+    # Use first batch as base (usually contains title, abstract, etc.)
     merged = batch_results[0].copy()
     merged_data = merged.get('data', {}).copy()
 
-    # Claims: 모든 배치에서 수집하여 병합 (중복 제거)
+    # Claims: Collect from all batches and merge (remove duplicates)
     all_claims = []
     seen_claim_nums = set()
 
@@ -498,18 +498,18 @@ def _merge_batch_results(batch_results: List[Dict]) -> Dict:
         batch_claims = batch_data.get('claims', [])
 
         for claim in batch_claims:
-            # 청구항 번호 추출
+            # Extract claim number
             claim_num = None
             match = re.match(r'^(\d+)[\.\)]\s', claim)
             if match:
                 claim_num = match.group(1)
 
-            # 중복이 아니면 추가
+            # Add if not duplicate
             if claim_num and claim_num not in seen_claim_nums:
                 all_claims.append(claim)
                 seen_claim_nums.add(claim_num)
             elif not claim_num:
-                # 번호를 찾을 수 없는 경우 일단 추가
+                # Add anyway if number cannot be found
                 all_claims.append(claim)
 
         print(f"  [Merge]   Batch {batch_idx}: {len(batch_claims)} claims")
@@ -517,7 +517,7 @@ def _merge_batch_results(batch_results: List[Dict]) -> Dict:
     merged_data['claims'] = all_claims
     print(f"  [Merge]   Total unique claims: {len(all_claims)}")
 
-    # Description: 모든 배치의 description 합치기
+    # Description: Combine descriptions from all batches
     all_descriptions = []
     for batch_result in batch_results:
         batch_data = batch_result.get('data', {})
@@ -526,12 +526,12 @@ def _merge_batch_results(batch_results: List[Dict]) -> Dict:
             all_descriptions.append(desc.strip())
 
     if all_descriptions:
-        # 중복 제거 (같은 내용이 여러 번 나오는 경우)
+        # Remove duplicates (if same content appears multiple times)
         merged_data['description'] = '\n\n'.join(all_descriptions)
         print(f"  [Merge]   Combined descriptions from {len(all_descriptions)} batches")
 
-    # Title, Abstract: 첫 번째 배치 사용 (이미 merged_data에 있음)
-    # 만약 첫 번째 배치에 없으면 다른 배치에서 찾기
+    # Title, Abstract: Use first batch (already in merged_data)
+    # If not in first batch, find from other batches
     if not merged_data.get('title'):
         for batch_result in batch_results[1:]:
             title = batch_result.get('data', {}).get('title')
@@ -548,7 +548,7 @@ def _merge_batch_results(batch_results: List[Dict]) -> Dict:
                 print(f"  [Merge]   Found abstract in later batch")
                 break
 
-    # Tokens and cost: 모두 합산
+    # Tokens and cost: Sum all
     total_input_tokens = sum(br.get('input_tokens', 0) for br in batch_results)
     total_output_tokens = sum(br.get('output_tokens', 0) for br in batch_results)
     total_cost = sum(br.get('cost', 0) for br in batch_results)
@@ -932,19 +932,19 @@ REMEMBER: Accuracy over completeness. Empty fields are better than made-up infor
 
 async def analyze_patent_robust(images: List[Image.Image], num_attempts: int = 1, model: str = "gpt-5") -> Dict:
     """
-    특허 분석 (최적화 버전 - 단일 실행)
+    Patent analysis (optimized version - single execution)
 
     Args:
-        images: 분석할 이미지 리스트
-        num_attempts: 실행 횟수 (기본값: 1, 비용 최적화)
+        images: List of images to analyze
+        num_attempts: Number of execution attempts (default: 1, cost optimization)
         model: AI model to use (default: gpt-5)
 
     Returns:
-        분석 결과
+        Analysis result
     """
     print(f"\n[Patent Analysis] Starting optimized analysis...")
 
-    # 단일 실행으로 최적화 (비용 절감)
+    # Optimize with single execution (cost reduction)
     try:
         result = await analyze_patent(images, model=model)
         if result.get('success'):
@@ -962,13 +962,13 @@ async def analyze_patent_robust(images: List[Image.Image], num_attempts: int = 1
 
 async def analyze_pdf_file(pdf_path: str) -> Optional[Dict]:
     """
-    PDF 파일을 분석하여 특허 데이터 추출 (업로드된 파일용)
+    Analyze PDF file to extract patent data (for uploaded files)
 
     Args:
-        pdf_path: PDF 파일 경로
+        pdf_path: PDF file path
 
     Returns:
-        특허 데이터 딕셔너리 또는 None
+        Patent data dictionary or None
     """
     print(f"\n[PDF Analysis] Analyzing uploaded PDF: {pdf_path}")
 
@@ -977,7 +977,7 @@ async def analyze_pdf_file(pdf_path: str) -> Optional[Dict]:
         return None
 
     try:
-        # PDF 페이지 수 확인
+        # Check PDF page count
         with pdfplumber.open(pdf_path) as pdf:
             pages = len(pdf.pages)
 
@@ -987,7 +987,7 @@ async def analyze_pdf_file(pdf_path: str) -> Optional[Dict]:
 
         print(f"[PDF Analysis] {pages} pages found")
 
-        # PDF를 이미지로 변환
+        # Convert PDF to images
         print("[PDF Analysis] Converting PDF to images...")
         imgs = convert_pages(pdf_path, MAX_IMAGE_SIZE)
 
@@ -995,7 +995,7 @@ async def analyze_pdf_file(pdf_path: str) -> Optional[Dict]:
             print("[PDF Analysis] Image conversion failed")
             return None
 
-        # 분석 수행
+        # Perform analysis
         print("[PDF Analysis] Starting analysis...")
         result = await analyze_patent_robust(imgs)
 
@@ -1006,7 +1006,7 @@ async def analyze_pdf_file(pdf_path: str) -> Optional[Dict]:
 
         data = result.get('data', {})
 
-        # 데이터 검증
+        # Validate data
         if not data.get('title') and not data.get('claims') and not data.get('abstract'):
             print("[PDF Analysis] Failed to extract valid data")
             return None
@@ -1015,7 +1015,7 @@ async def analyze_pdf_file(pdf_path: str) -> Optional[Dict]:
         print(f"[PDF Analysis] Title: {data.get('title', 'N/A')}")
         print(f"[PDF Analysis] Claims: {len(data.get('claims', []))}")
 
-        # 토큰 정보를 data에 추가 (기존 호환성 유지)
+        # Add token information to data (maintain backward compatibility)
         data['_input_tokens'] = result.get('input_tokens', 0)
         data['_output_tokens'] = result.get('output_tokens', 0)
         data['_cost'] = result.get('cost', 0.0)
