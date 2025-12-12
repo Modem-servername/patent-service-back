@@ -1,21 +1,23 @@
 """
-인증 모듈 - bcrypt + JWT 기반 로그인 시스템
+인증 모듈 - SHA-256 + bcrypt 이중 해싱 기반 로그인 시스템
 
-공통 비밀번호를 사용한 관리자 인증
+프론트엔드: SHA-256으로 해시 → 서버 전송
+백엔드: bcrypt로 검증
 """
 
 import os
+import hashlib
 import bcrypt
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from fastapi import HTTPException, Security, Depends
+from fastapi import HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 # 환경 변수에서 설정 읽기
 ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24시간
 
@@ -25,7 +27,7 @@ security = HTTPBearer()
 
 class LoginRequest(BaseModel):
     """로그인 요청 스키마"""
-    password: str
+    password_hash: str  # 프론트엔드에서 SHA-256 해시된 값
 
 
 class TokenResponse(BaseModel):
@@ -35,33 +37,34 @@ class TokenResponse(BaseModel):
     expires_in: int  # 초 단위
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
+def verify_password_hash(client_hash: str, stored_bcrypt_hash: str) -> bool:
     """
-    비밀번호 검증
+    클라이언트에서 전송한 SHA-256 해시를 bcrypt와 비교
 
     Args:
-        plain_password: 평문 비밀번호
-        hashed_password: bcrypt 해시된 비밀번호
+        client_hash: 프론트엔드에서 SHA-256으로 해시한 값
+        stored_bcrypt_hash: 서버에 저장된 bcrypt 해시 값
 
     Returns:
         비밀번호 일치 여부
     """
     try:
+        # 클라이언트 해시를 bcrypt로 검증
         return bcrypt.checkpw(
-            plain_password.encode('utf-8'),
-            hashed_password.encode('utf-8')
+            client_hash.encode('utf-8'),
+            stored_bcrypt_hash.encode('utf-8')
         )
     except Exception as e:
         print(f"[Auth] Password verification error: {e}")
         return False
 
 
-def authenticate(password: str) -> bool:
+def authenticate(password_hash: str) -> bool:
     """
-    공통 비밀번호로 인증
+    SHA-256 해시된 비밀번호로 인증
 
     Args:
-        password: 입력된 비밀번호
+        password_hash: 프론트엔드에서 SHA-256 해시한 비밀번호
 
     Returns:
         인증 성공 여부
@@ -70,7 +73,7 @@ def authenticate(password: str) -> bool:
         print("[Auth] Warning: ADMIN_PASSWORD_HASH not set in environment variables")
         return False
 
-    return verify_password(password, ADMIN_PASSWORD_HASH)
+    return verify_password_hash(password_hash, ADMIN_PASSWORD_HASH)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -156,12 +159,12 @@ async def get_current_user(
     return payload
 
 
-def login(password: str) -> TokenResponse:
+def login(password_hash: str) -> TokenResponse:
     """
     로그인 처리
 
     Args:
-        password: 비밀번호
+        password_hash: SHA-256으로 해시된 비밀번호
 
     Returns:
         JWT 토큰 응답
@@ -169,8 +172,8 @@ def login(password: str) -> TokenResponse:
     Raises:
         HTTPException: 인증 실패 시
     """
-    if not authenticate(password):
-        print(f"[Auth] Login failed: invalid password")
+    if not authenticate(password_hash):
+        print(f"[Auth] Login failed: invalid password hash")
         raise HTTPException(
             status_code=401,
             detail="Incorrect password"
@@ -188,3 +191,19 @@ def login(password: str) -> TokenResponse:
         token_type="bearer",
         expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60  # 초 단위로 변환
     )
+
+
+def generate_client_password_hash(plain_password: str) -> str:
+    """
+    평문 비밀번호를 SHA-256으로 해시 (클라이언트 시뮬레이션용)
+
+    프론트엔드에서는 JavaScript로 동일한 해시를 생성:
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+
+    Args:
+        plain_password: 평문 비밀번호
+
+    Returns:
+        SHA-256 해시 (소문자 hex)
+    """
+    return hashlib.sha256(plain_password.encode('utf-8')).hexdigest()

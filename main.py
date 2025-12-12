@@ -1571,18 +1571,27 @@ async def download_patent_pdf(request_id: str):
 
 import auth
 
-@app.post("/login")
+@app.post("/login", response_model=auth.TokenResponse)
 async def login_endpoint(request: auth.LoginRequest):
     """
-    관리자 로그인
+    관리자 로그인 (SHA-256 해시 기반)
+
+    프론트엔드에서 비밀번호를 SHA-256으로 해시하여 전송:
+    ```javascript
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    ```
 
     Args:
-        request: 로그인 요청 (비밀번호)
+        request: 로그인 요청 (SHA-256 해시된 비밀번호)
 
     Returns:
         JWT 액세스 토큰
     """
-    return auth.login(request.password)
+    return auth.login(request.password_hash)
 
 
 @app.get("/protected-example")
