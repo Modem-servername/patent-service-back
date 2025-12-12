@@ -9,12 +9,14 @@ import os
 import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
+from dotenv import load_dotenv
 from jose import JWTError, jwt
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 # 환경 변수에서 설정 읽기
+load_dotenv()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")  # 평문 비밀번호
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
 JWT_ALGORITHM = "HS256"
@@ -65,9 +67,7 @@ def authenticate(client_hash: str) -> bool:
 
     # 서버의 평문 비밀번호를 SHA-256으로 해시
     server_hash = hash_password(ADMIN_PASSWORD)
-
-    # 클라이언트 해시와 비교
-    return client_hash == server_hash
+    return client_hash.lower() == server_hash.lower()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
