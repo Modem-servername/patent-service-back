@@ -1410,13 +1410,13 @@ def parse_request_json_fields(request_dict: Dict) -> Dict:
 @app.get("/request-status/{request_id}")
 async def get_request_status(request_id: str):
     """
-    요청 상태 조회
+    Get request status
 
     Args:
-        request_id: 요청 ID (UUID)
+        request_id: Request ID (UUID)
 
     Returns:
-        요청 상태 및 결과 (완료된 경우)
+        Request status and results (if completed)
     """
     result = request_manager.get_request(request_id)
 
@@ -1432,18 +1432,18 @@ async def get_request_status(request_id: str):
 @app.post("/cancel-request/{request_id}")
 async def cancel_request(request_id: str):
     """
-    요청 취소
+    Cancel request
 
     Args:
-        request_id: 취소할 요청 ID
+        request_id: Request ID to cancel
 
     Returns:
-        취소 성공 여부
+        Cancellation success status
     """
     success = request_manager.cancel_request(request_id)
 
     if not success:
-        # 이미 완료되었거나 존재하지 않는 요청
+        # Request already completed or not found
         request = request_manager.get_request(request_id)
 
         if not request:
@@ -1469,15 +1469,15 @@ async def get_requests(
     offset: int = 0
 ):
     """
-    요청 목록 조회 (페이징)
+    Get paginated request list
 
     Args:
-        status: 상태 필터 (pending, processing, completed, failed, cancelled)
-        limit: 최대 개수 (기본 100)
-        offset: 시작 위치 (기본 0)
+        status: Status filter (pending, processing, completed, failed, cancelled)
+        limit: Max results (default 100)
+        offset: Start position (default 0)
 
     Returns:
-        요청 목록
+        Paginated request list
     """
     requests = request_manager.get_all_requests(status, limit, offset)
 
@@ -1495,10 +1495,10 @@ async def get_requests(
 @app.get("/statistics")
 async def get_statistics():
     """
-    분석 통계 조회
+    Get analysis statistics
 
     Returns:
-        전체 요청 수, 상태별 개수, 총 비용, 평균 처리 시간
+        Total requests, status counts, total cost, average processing time
     """
     stats = request_manager.get_statistics()
     return stats
@@ -1507,13 +1507,13 @@ async def get_statistics():
 @app.delete("/request/{request_id}")
 async def delete_request(request_id: str):
     """
-    요청 삭제 (관리자용)
+    Delete request (admin only)
 
     Args:
-        request_id: 삭제할 요청 ID
+        request_id: Request ID to delete
 
     Returns:
-        삭제 성공 여부
+        Deletion success status
     """
     success = request_manager.delete_request(request_id)
 
@@ -1530,35 +1530,35 @@ async def delete_request(request_id: str):
 @app.get("/download-patent-pdf/{request_id}")
 async def download_patent_pdf(request_id: str):
     """
-    원본 특허 PDF 파일 다운로드
+    Download original patent PDF
 
     Args:
-        request_id: 요청 ID (UUID)
+        request_id: Request ID (UUID)
 
     Returns:
-        원본 특허 PDF 파일
+        Original patent PDF file
     """
-    # DB에서 요청 조회
+    # Get request from DB
     request = request_manager.get_request(request_id)
 
     if not request:
         raise HTTPException(404, f"Request not found: {request_id}")
 
-    # PDF 파일 경로 확인
+    # Check PDF file path
     pdf_file_path = request.get('pdf_file_path')
 
     if not pdf_file_path:
         raise HTTPException(404, f"No PDF file associated with this request")
 
-    # 파일 존재 여부 확인
+    # Verify file exists
     pdf_path = Path(pdf_file_path)
     if not pdf_path.exists():
         raise HTTPException(404, f"PDF file not found: {pdf_file_path}")
 
-    # 원본 파일명 추출 (request_id_ 제거)
+    # Extract original filename (remove request_id_ prefix)
     original_filename = request.get('filename')
     if not original_filename:
-        # 파일명에서 request_id_ 부분 제거
+        # Strip request_id_ prefix from filename
         original_filename = pdf_path.name.replace(f"{request_id}_", "")
 
     print(f"[API] Serving patent PDF for request {request_id}: {pdf_file_path}")
@@ -1570,16 +1570,16 @@ async def download_patent_pdf(request_id: str):
     )
 
 
-# ===== 인증 API =====
+# ===== Authentication API =====
 
 import auth
 
 @app.post("/login", response_model=auth.TokenResponse)
 async def login_endpoint(request: auth.LoginRequest):
     """
-    관리자 로그인 (SHA-256 해시 기반)
+    Admin login (SHA-256 hash-based)
 
-    프론트엔드에서 비밀번호를 SHA-256으로 해시하여 전송:
+    Frontend should hash password with SHA-256:
     ```javascript
     const encoder = new TextEncoder();
     const data = encoder.encode(password);
@@ -1589,10 +1589,10 @@ async def login_endpoint(request: auth.LoginRequest):
     ```
 
     Args:
-        request: 로그인 요청 (SHA-256 해시된 비밀번호)
+        request: Login request (SHA-256 hashed password)
 
     Returns:
-        JWT 액세스 토큰
+        JWT access token
     """
     return auth.login(request.password_hash)
 
@@ -1600,16 +1600,16 @@ async def login_endpoint(request: auth.LoginRequest):
 @app.get("/protected-example")
 async def protected_example(user: dict = Depends(auth.get_current_user)):
     """
-    보호된 엔드포인트 예시
+    Protected endpoint example
 
-    인증된 사용자만 접근 가능
-    Authorization 헤더에 Bearer 토큰 필요
+    Requires authentication
+    Authorization header with Bearer token needed
 
     Args:
-        user: 인증된 사용자 정보 (의존성 주입)
+        user: Authenticated user info (dependency injection)
 
     Returns:
-        사용자 정보
+        User information
     """
     return {
         "message": "This is a protected route",
