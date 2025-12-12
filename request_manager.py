@@ -177,9 +177,28 @@ def save_result(
     total_tokens: int,
     pdf_file_path: Optional[str] = None
 ):
-    """분석 결과 저장"""
+    """분석 결과 저장 (정확한 처리 시간 자동 계산)"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+
+        # 정확한 처리 시간 계산: started_at과 현재 시간의 차이
+        cursor.execute("""
+            SELECT started_at FROM analysis_requests
+            WHERE request_id = ?
+        """, (request_id,))
+        row = cursor.fetchone()
+
+        accurate_processing_time = processing_time  # 기본값
+        if row and row[0]:
+            started_at_str = row[0]
+            try:
+                started_at = datetime.fromisoformat(started_at_str)
+                completed_at = datetime.now()
+                accurate_processing_time = (completed_at - started_at).total_seconds()
+                print(f"[Request Manager] Accurate processing time: {accurate_processing_time:.2f}s (provided: {processing_time:.2f}s)")
+            except Exception as e:
+                print(f"[Request Manager] Warning: Could not calculate accurate processing time: {e}")
+
         cursor.execute("""
             UPDATE analysis_requests
             SET status = ?,
@@ -197,7 +216,7 @@ def save_result(
             markdown_report,
             pdf_file_path,
             datetime.now().isoformat(),
-            processing_time,
+            accurate_processing_time,
             total_cost,
             total_tokens,
             request_id
