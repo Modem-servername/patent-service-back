@@ -1318,7 +1318,10 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
             "request_id": request_id,
             "patent_number": patent_number,
             "analysis": analysis_result.model_dump(),
-            "markdown_report": markdown_report
+            "markdown_report": markdown_report,
+            "processing_time": processing_time,
+            "total_cost": total_cost,
+            "total_tokens": total_tokens
         }
 
         request_manager.save_result(
