@@ -2,7 +2,7 @@
 Patent PDF analysis API with Infringement Analysis
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -1565,6 +1565,44 @@ async def download_patent_pdf(request_id: str):
         filename=original_filename,
         media_type="application/pdf"
     )
+
+
+# ===== 인증 API =====
+
+import auth
+
+@app.post("/login")
+async def login_endpoint(request: auth.LoginRequest):
+    """
+    관리자 로그인
+
+    Args:
+        request: 로그인 요청 (비밀번호)
+
+    Returns:
+        JWT 액세스 토큰
+    """
+    return auth.login(request.password)
+
+
+@app.get("/protected-example")
+async def protected_example(user: dict = Depends(auth.get_current_user)):
+    """
+    보호된 엔드포인트 예시
+
+    인증된 사용자만 접근 가능
+    Authorization 헤더에 Bearer 토큰 필요
+
+    Args:
+        user: 인증된 사용자 정보 (의존성 주입)
+
+    Returns:
+        사용자 정보
+    """
+    return {
+        "message": "This is a protected route",
+        "user": user
+    }
 
 
 if __name__ == "__main__":
