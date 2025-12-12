@@ -26,7 +26,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import request manager
 import request_manager
-import auth
 
 # Import simplified infringement analysis module
 from infringement_search_v2 import (
@@ -63,7 +62,7 @@ if OPENAI_API_KEY and OPENAI_API_KEY != "your_api_key_here":
     try:
         from pdf_upload_handler import router as upload_router, init_analyzer
         init_analyzer(OPENAI_API_KEY, TAVILY_API_KEY)
-        app.include_router(upload_router, prefix="/api", tags=["PDF Upload"], dependencies=[Depends(auth.get_current_user)])
+        app.include_router(upload_router, prefix="/api", tags=["PDF Upload"])
         print("pdf upload handler loaded")
     except Exception as e:
         print(f"warning: pdf upload handler failed to load: {e}")
@@ -1138,7 +1137,7 @@ async def root():
     }
 
 @app.post("/analyze", response_model=PatentPDFResponse)
-async def analyze(req: PatentRequest, user: dict = Depends(auth.get_current_user)):
+async def analyze(req: PatentRequest):
     if not req.patent_number:
         raise HTTPException(400, "patent number required")
     # Normalize patent number to uppercase
@@ -1149,7 +1148,7 @@ async def analyze(req: PatentRequest, user: dict = Depends(auth.get_current_user
     return await process_patent(patent_number, model=req.model)
 
 @app.post("/analyze-infringement")
-async def analyze_infringement(req: InfringementAnalysisRequest, user: dict = Depends(auth.get_current_user)):
+async def analyze_infringement(req: InfringementAnalysisRequest):
     """
     특허 침해 분석 엔드포인트
 
@@ -1368,7 +1367,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest, user: dict = De
         raise HTTPException(500, f"Infringement analysis failed: {str(e)}")
 
 @app.get("/download/{patent_number}")
-async def download(patent_number: str, user: dict = Depends(auth.get_current_user)):
+async def download(patent_number: str):
     # Normalize patent number to uppercase
     patent_number = patent_number.strip().upper()
     # Security: Validate patent number format to prevent path traversal
@@ -1406,7 +1405,7 @@ def parse_request_json_fields(request_dict: Dict) -> Dict:
     return request_dict
 
 @app.get("/request-status/{request_id}")
-async def get_request_status(request_id: str, user: dict = Depends(auth.get_current_user)):
+async def get_request_status(request_id: str):
     """
     요청 상태 조회
 
@@ -1428,7 +1427,7 @@ async def get_request_status(request_id: str, user: dict = Depends(auth.get_curr
 
 
 @app.post("/cancel-request/{request_id}")
-async def cancel_request(request_id: str, user: dict = Depends(auth.get_current_user)):
+async def cancel_request(request_id: str):
     """
     요청 취소
 
@@ -1464,8 +1463,7 @@ async def cancel_request(request_id: str, user: dict = Depends(auth.get_current_
 async def get_requests(
     status: Optional[str] = None,
     limit: int = 100,
-    offset: int = 0,
-    user: dict = Depends(auth.get_current_user)
+    offset: int = 0
 ):
     """
     요청 목록 조회 (페이징)
@@ -1492,7 +1490,7 @@ async def get_requests(
 
 
 @app.get("/statistics")
-async def get_statistics(user: dict = Depends(auth.get_current_user)):
+async def get_statistics():
     """
     분석 통계 조회
 
@@ -1504,7 +1502,7 @@ async def get_statistics(user: dict = Depends(auth.get_current_user)):
 
 
 @app.delete("/request/{request_id}")
-async def delete_request(request_id: str, user: dict = Depends(auth.get_current_user)):
+async def delete_request(request_id: str):
     """
     요청 삭제 (관리자용)
 
@@ -1527,7 +1525,7 @@ async def delete_request(request_id: str, user: dict = Depends(auth.get_current_
 
 
 @app.get("/download-patent-pdf/{request_id}")
-async def download_patent_pdf(request_id: str, user: dict = Depends(auth.get_current_user)):
+async def download_patent_pdf(request_id: str):
     """
     원본 특허 PDF 파일 다운로드
 
@@ -1570,6 +1568,8 @@ async def download_patent_pdf(request_id: str, user: dict = Depends(auth.get_cur
 
 
 # ===== 인증 API =====
+
+import auth
 
 @app.post("/login", response_model=auth.TokenResponse)
 async def login_endpoint(request: auth.LoginRequest):
