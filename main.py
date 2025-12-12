@@ -1150,18 +1150,18 @@ async def analyze(req: PatentRequest):
 @app.post("/analyze-infringement")
 async def analyze_infringement(req: InfringementAnalysisRequest):
     """
-    특허 침해 분석 엔드포인트
+    Patent infringement analysis endpoint
 
     Args:
-        req: 특허 번호, 최대 후보 수, 상세 차트 생성 여부
+        req: Patent number, max candidates, detailed chart creation flag
 
     Returns:
-        침해 분석 결과 (JSON 및 마크다운 보고서) + request_id
+        Analysis results (JSON + markdown report) with request_id
     """
-    # 실행 시간 측정 시작 (요청 받은 시점부터)
+    # Start tracking processing time
     start_time = time.time()
 
-    # 1. Request ID 생성 및 DB 저장
+    # Create request and save to DB
     request_id = request_manager.create_request(
         patent_number=req.patent_number,
         max_candidates=req.max_candidates,
@@ -1197,7 +1197,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         request_manager.save_error(request_id, "Infringement analyzer not initialized - check API key")
         raise HTTPException(500, "Infringement analyzer not initialized - check API key")
 
-    # 2. 상태를 processing으로 업데이트
+    # Update status to processing
     request_manager.update_status(request_id, "processing")
 
     try:
@@ -1212,7 +1212,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
                 "error": "Request was cancelled by user"
             })
 
-        # Step 1: 특허 분석 (기존 기능)
+        # Step 1: Analyze patent document
         print(f"[API] Step 1: Analyzing patent {patent_number}...")
         patent_response = await process_patent(patent_number, model=req.model)
 
@@ -1233,7 +1233,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
                 "error": "Request was cancelled by user"
             })
 
-        # Step 2: 특허 데이터를 Dict로 변환
+        # Step 2: Convert patent response to dict
         print(f"[API] Step 2: Converting patent data to dict...")
         patent_data = {
             "patent_number": patent_response.patent_number,
@@ -1257,7 +1257,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
                 "error": "Request was cancelled by user"
             })
 
-        # Step 3: 침해 분석 수행
+        # Step 3: Run infringement analysis
         print(f"[API] Step 3: Performing infringement analysis with model {req.model}...")
         if req.custom_prompt:
             print(f"[API] Custom prompt provided (Note: simplified analyzer doesn't use custom prompts): {req.custom_prompt[:100]}...")
@@ -1289,27 +1289,27 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
                 "error": "Request was cancelled by user"
             })
 
-        # Step 4: 보고서 생성
+        # Step 4: Generate markdown report
         print(f"[API] Step 4: Generating report...")
         markdown_report = format_analysis_report(analysis_result)
 
-        # Step 5: 결과 저장
+        # Step 5: Calculate metrics and save results
         processing_time = time.time() - start_time
 
-        # 특허 분석 비용 및 토큰 (Step 1에서 발생한 비용)
+        # Patent analysis cost and tokens (from step 1)
         patent_cost = patent_response.estimated_cost or 0.0
         patent_input_tokens = patent_response.total_input_tokens or 0
         patent_output_tokens = patent_response.total_output_tokens or 0
         patent_total_tokens = patent_input_tokens + patent_output_tokens
 
-        # 침해 분석 비용 및 토큰 (Step 3에서 발생한 비용)
-        # analyzer 인스턴스에서 직접 읽어와 정확성 보장
+        # Infringement analysis cost and tokens (from step 3)
+        # Read directly from analyzer instance for accuracy
         infringement_input_tokens = infringement_analyzer.total_input_tokens
         infringement_output_tokens = infringement_analyzer.total_output_tokens
         infringement_tokens = infringement_input_tokens + infringement_output_tokens
         infringement_cost = infringement_analyzer.total_cost
 
-        # 전체 합산 (특허 분석 + 침해 분석)
+        # Total cost and tokens
         total_cost = patent_cost + infringement_cost
         total_tokens = patent_total_tokens + infringement_tokens
 
@@ -1354,7 +1354,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         return JSONResponse(content=result_json)
 
     except HTTPException as he:
-        # HTTP exceptions에 대해 에러 저장
+        # Save HTTP error to DB
         request_manager.save_error(request_id, str(he.detail))
         raise he
     except Exception as e:
@@ -1364,7 +1364,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
         tb_str = traceback.format_exc()
         traceback.print_exc()
 
-        # 에러 저장
+        # Save error to DB with traceback
         request_manager.save_error(request_id, str(e), tb_str)
 
         raise HTTPException(500, f"Infringement analysis failed: {str(e)}")
