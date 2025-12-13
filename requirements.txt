@@ -10,3 +10,4 @@ pydantic
 python-dotenv
 tavily-python
 jose
+psycopg2-binary

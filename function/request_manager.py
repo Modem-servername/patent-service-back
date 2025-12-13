@@ -3,7 +3,7 @@ Analysis Request Management Module
 UUID-based request tracking, status management, cancellation functionality
 """
 
-import sqlite3
+import psycopg2
 import uuid
 import json
 from datetime import datetime
@@ -17,8 +17,13 @@ DB_PATH = Path("analysis_requests.db")
 @contextmanager
 def get_db_connection():
     """Database connection context manager"""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row  # dict-like access
+    conn = psycopg2.connect(
+        host = "localhost",
+        database = "analysis_requests",
+        user = "admin",
+        password = "codingapple"
+    )
+
     try:
         yield conn
     finally:
