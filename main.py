@@ -25,10 +25,10 @@ import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import request manager
-import request_manager
+from function import request_manager
 
 # Import simplified infringement analysis module
-from infringement_search_v2 import (
+from function.infringement_search_v2 import (
     SimplifiedInfringementAnalyzer,
     PatentInfringementAnalysis,
     format_analysis_report
@@ -60,7 +60,7 @@ if OPENAI_API_KEY and OPENAI_API_KEY != "your_api_key_here":
 
     # Initialize PDF Upload router
     try:
-        from pdf_upload_handler import router as upload_router, init_analyzer
+        from function.pdf_upload_handler import router as upload_router, init_analyzer
         init_analyzer(OPENAI_API_KEY, TAVILY_API_KEY)
         app.include_router(upload_router, prefix="/api", tags=["PDF Upload"])
         print("pdf upload handler loaded")
@@ -1317,6 +1317,7 @@ async def analyze_infringement(req: InfringementAnalysisRequest):
             "success": True,
             "request_id": request_id,
             "patent_number": patent_number,
+            "technology_summary": analysis_result.technology_summary,
             "analysis": analysis_result.model_dump(),
             "markdown_report": markdown_report,
             "processing_time": processing_time,
@@ -1572,7 +1573,7 @@ async def download_patent_pdf(request_id: str):
 
 # ===== Authentication API =====
 
-import auth
+from function import auth
 
 @app.post("/login", response_model=auth.TokenResponse)
 async def login_endpoint(request: auth.LoginRequest):

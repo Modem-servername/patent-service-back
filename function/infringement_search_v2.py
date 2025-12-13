@@ -19,6 +19,8 @@ class InfringementCandidate(BaseModel):
     relevance_score: float
     market_size: Optional[str] = None
     source_url: Optional[str] = None
+    evidence_urls: Optional[List[str]] = []
+    evidence_description: Optional[str] = None
 
 
 class ClaimChartElement(BaseModel):
@@ -465,9 +467,9 @@ Description: {description[:500]}
         prompt = f"""Analyze patent for potential infringement.
 
 PATENT:
-- Title: {title[:100]}
-- Technology: {tech_summary[:200]}
-- Main Claim: {claim_text[:300]}
+- Title: {title}
+- Technology: {tech_summary}
+- Main Claim: {claim_text}
 - Patent Applicant/Assignee: {applicant}
 
 TASK: Find {max_candidates} real companies using similar technology.
@@ -487,7 +489,10 @@ OUTPUT (valid JSON only, Korean descriptions):
       "company": "CompanyName Inc.",
       "product_service": "제품명 (한국어)",
       "matching_feature": "기술적 유사성 설명 (한국어로 100단어 이상)",
-      "relevance_score": 0.80
+      "relevance_score": 0.80,
+      "source_url": "https://company.com/product",
+      "evidence_urls": ["https://news.com/article1", "https://techblog.com/article2"],
+      "evidence_description": "근거 자료 설명 (한국어): 공식 발표, 기술 블로그, 뉴스 기사, 특허 출원 등의 구체적인 출처와 내용"
     }}
   ]
 }}
@@ -500,6 +505,9 @@ RULES:
 - Company names in English, descriptions in Korean
 - Scores between 0.70-0.95
 - Each matching_feature: 100+ words in Korean
+- MUST provide source_url (company website, product page, or official tech documentation)
+- MUST provide evidence_urls (news articles, technical blogs, patents, press releases - real URLs)
+- MUST provide evidence_description explaining why these sources prove the technology match
 - NEVER include applicant's corporate group"""
 
         try:
@@ -534,7 +542,7 @@ Generate {max_candidates} major companies that might use similar technology.
 Return ONLY valid JSON in this exact format (all text in Korean except company names):
 {{
   "candidates": [
-    {{"company": "CompanyName", "product_service": "제품명 (한국어)", "matching_feature": "기술 설명 (한국어로 100단어)", "relevance_score": 0.75}}
+    {{"company": "CompanyName", "product_service": "제품명 (한국어)", "matching_feature": "기술 설명 (한국어로 100단어)", "relevance_score": 0.75, "source_url": "https://company.com/product", "evidence_urls": ["https://news.com"], "evidence_description": "근거 설명 (한국어)"}}
   ]
 }}"""
 
@@ -593,7 +601,10 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
                     company=company_name,
                     product_service=item.get("product_service", ""),
                     matching_feature=item.get("matching_feature", ""),
-                    relevance_score=item.get("relevance_score", 0.0)
+                    relevance_score=item.get("relevance_score", 0.0),
+                    source_url=item.get("source_url"),
+                    evidence_urls=item.get("evidence_urls", []),
+                    evidence_description=item.get("evidence_description")
                 ))
 
             status_msg = f"[Infringers] ✓ Found {len(candidates)} candidates"
@@ -1024,13 +1035,26 @@ def format_analysis_report(analysis: PatentInfringementAnalysis) -> str:
         report += f"- {ic}\n"
 
     report += "\n---\n\n## 4. Potential Infringers\n\n"
-    report += "| Company | Product/Service | Matching Feature | Score |\n"
-    report += "|---------|-----------------|------------------|-------|\n"
 
-    for candidate in analysis.potentially_matching_companies:
-        report += f"| {candidate.company} | {candidate.product_service} | {candidate.matching_feature[:50]}... | {candidate.relevance_score:.2f} |\n"
+    for idx, candidate in enumerate(analysis.potentially_matching_companies, 1):
+        report += f"### {idx}. {candidate.company}\n\n"
+        report += f"**제품/서비스:** {candidate.product_service}\n\n"
+        report += f"**유사도 점수:** {candidate.relevance_score:.2f}\n\n"
+        report += f"**기술적 유사성:**\n{candidate.matching_feature}\n\n"
 
-    report += "\n---\n\n"
+        if candidate.source_url:
+            report += f"**출처:** [{candidate.source_url}]({candidate.source_url})\n\n"
+
+        if candidate.evidence_urls:
+            report += f"**근거 자료:**\n"
+            for evidence_url in candidate.evidence_urls:
+                report += f"- [{evidence_url}]({evidence_url})\n"
+            report += "\n"
+
+        if candidate.evidence_description:
+            report += f"**근거 설명:**\n{candidate.evidence_description}\n\n"
+
+        report += "---\n\n"
 
     # 각 독립항 분석
     for idx, claim_analysis in enumerate(analysis.independent_claim_analyses, 1):
