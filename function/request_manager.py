@@ -6,22 +6,32 @@ UUID-based request tracking, status management, cancellation functionality
 import psycopg2
 import uuid
 import json
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
-from pathlib import Path
+from psycopg2.extras import DictCursor
+from dotenv import load_dotenv
 
-DB_PATH = Path("analysis_requests.db")
+# Load environment variables from .env file
+load_dotenv()
+
+# Database connection details from environment variables
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_NAME = os.getenv("DB_NAME", "analysis_requests")
+DB_USER = os.getenv("DB_USER", "admin")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "codingapple")
 
 
 @contextmanager
 def get_db_connection():
     """Database connection context manager"""
     conn = psycopg2.connect(
-        host = "localhost",
-        database = "analysis_requests",
-        user = "admin",
-        password = "codingapple"
+        host=DB_HOST,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        cursor_factory=DictCursor  # Return rows as dictionaries
     )
 
     try:
@@ -123,7 +133,7 @@ def create_request(
                 request_id, patent_number, input_type, filename,
                 max_candidates, create_detailed_chart, model, follow_up_questions,
                 status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             request_id,
             patent_number,
@@ -158,14 +168,14 @@ def update_status(request_id: str, status: str):
         if timestamp_field:
             cursor.execute(f"""
                 UPDATE analysis_requests
-                SET status = ?, {timestamp_field} = ?
-                WHERE request_id = ?
+                SET status = %s, {timestamp_field} = %s
+                WHERE request_id = %s
             """, (status, datetime.now().isoformat(), request_id))
         else:
             cursor.execute("""
                 UPDATE analysis_requests
-                SET status = ?
-                WHERE request_id = ?
+                SET status = %s
+                WHERE request_id = %s
             """, (status, request_id))
 
         conn.commit()
@@ -189,7 +199,7 @@ def save_result(
         # Calculate accurate processing time: difference between started_at and current time
         cursor.execute("""
             SELECT started_at FROM analysis_requests
-            WHERE request_id = ?
+            WHERE request_id = %s
         """, (request_id,))
         row = cursor.fetchone()
 
@@ -206,15 +216,15 @@ def save_result(
 
         cursor.execute("""
             UPDATE analysis_requests
-            SET status = ?,
-                result_json = ?,
-                markdown_report = ?,
-                pdf_file_path = ?,
-                completed_at = ?,
-                processing_time_seconds = ?,
-                total_cost = ?,
-                total_tokens = ?
-            WHERE request_id = ?
+            SET status = %s,
+                result_json = %s,
+                markdown_report = %s,
+                pdf_file_path = %s,
+                completed_at = %s,
+                processing_time_seconds = %s,
+                total_cost = %s,
+                total_tokens = %s
+            WHERE request_id = %s
         """, (
             "completed",
             json.dumps(result_json, ensure_ascii=False),
@@ -237,11 +247,11 @@ def save_error(request_id: str, error_message: str, traceback_str: Optional[str]
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE analysis_requests
-            SET status = ?,
-                error_message = ?,
-                error_traceback = ?,
-                completed_at = ?
-            WHERE request_id = ?
+            SET status = %s,
+                error_message = %s,
+                error_traceback = %s,
+                completed_at = %s
+            WHERE request_id = %s
         """, (
             "failed",
             error_message,
@@ -260,7 +270,7 @@ def get_request(request_id: str) -> Optional[Dict]:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT * FROM analysis_requests
-            WHERE request_id = ?
+            WHERE request_id = %s
         """, (request_id,))
 
         row = cursor.fetchone()
@@ -283,7 +293,7 @@ def is_cancelled(request_id: str) -> bool:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT status FROM analysis_requests
-            WHERE request_id = ?
+            WHERE request_id = %s
         """, (request_id,))
 
         row = cursor.fetchone()
@@ -306,7 +316,7 @@ def cancel_request(request_id: str) -> bool:
         # Check current status
         cursor.execute("""
             SELECT status FROM analysis_requests
-            WHERE request_id = ?
+            WHERE request_id = %s
         """, (request_id,))
 
         row = cursor.fetchone()
@@ -323,8 +333,8 @@ def cancel_request(request_id: str) -> bool:
         # Process cancellation
         cursor.execute("""
             UPDATE analysis_requests
-            SET status = ?, cancelled_at = ?
-            WHERE request_id = ?
+            SET status = %s, cancelled_at = %s
+            WHERE request_id = %s
         """, ("cancelled", datetime.now().isoformat(), request_id))
 
         conn.commit()
@@ -351,15 +361,15 @@ def get_all_requests(
         if status:
             cursor.execute("""
                 SELECT * FROM analysis_requests
-                WHERE status = ?
+                WHERE status = %s
                 ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
             """, (status, limit, offset))
         else:
             cursor.execute("""
                 SELECT * FROM analysis_requests
                 ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
             """, (limit, offset))
 
         rows = cursor.fetchall()
@@ -372,7 +382,7 @@ def delete_request(request_id: str) -> bool:
         cursor = conn.cursor()
         cursor.execute("""
             DELETE FROM analysis_requests
-            WHERE request_id = ?
+            WHERE request_id = %s
         """, (request_id,))
         conn.commit()
 
@@ -430,8 +440,6 @@ def cleanup_stale_requests(timeout_minutes: int = 60):
     Args:
         timeout_minutes: Consider requests older than this as stale (in minutes)
     """
-    from datetime import datetime, timedelta
-
     cutoff_time = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
 
     with get_db_connection() as conn:
@@ -443,8 +451,8 @@ def cleanup_stale_requests(timeout_minutes: int = 60):
             FROM analysis_requests
             WHERE status IN ('pending', 'processing')
             AND (
-                (status = 'pending' AND created_at < ?)
-                OR (status = 'processing' AND COALESCE(started_at, created_at) < ?)
+                (status = 'pending' AND created_at < %s)
+                OR (status = 'processing' AND COALESCE(started_at, created_at) < %s)
             )
         """, (cutoff_time, cutoff_time))
 
@@ -463,10 +471,10 @@ def cleanup_stale_requests(timeout_minutes: int = 60):
 
             cursor.execute("""
                 UPDATE analysis_requests
-                SET status = ?,
-                    error_message = ?,
-                    completed_at = ?
-                WHERE request_id = ?
+                SET status = %s,
+                    error_message = %s,
+                    completed_at = %s
+                WHERE request_id = %s
             """, (
                 "failed",
                 f"Request timed out or server was restarted while in '{status}' state",
@@ -478,10 +486,3 @@ def cleanup_stale_requests(timeout_minutes: int = 60):
 
         conn.commit()
         print(f"[Request Manager] Cleanup complete: {len(stale_requests)} request(s) marked as failed")
-
-
-# Initialize DB at app startup
-init_database()
-
-# Clean up stale requests at server startup (pending/processing for 60+ minutes)
-cleanup_stale_requests(timeout_minutes=60)

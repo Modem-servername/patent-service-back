@@ -14,22 +14,21 @@ import time
 import asyncio
 
 # Import analysis logic from existing module
-from infringement_search_v2 import (
+from .infringement_search_v2 import (
     SimplifiedInfringementAnalyzer,
     format_analysis_report
 )
 
 # Request manager import
-import request_manager
-
-# Import PDF analysis function from main.py
-import sys
-sys.path.append(str(Path(__file__).parent))
+from . import request_manager
 
 router = APIRouter()
 
 # Project root directory (where pdf_upload_handler.py is located)
 BASE_DIR = Path(__file__).parent.resolve()
+# NOTE: The 'main' module is imported within a function to avoid a circular dependency
+# at startup. This is a fragile design and should be refactored in the future by
+# moving shared analysis logic out of 'main.py' into a separate utility module.
 
 # Uploaded file storage directory (temporary)
 UPLOAD_DIR = BASE_DIR / "uploads"
