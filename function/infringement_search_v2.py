@@ -41,6 +41,7 @@ class IndependentClaimAnalysis(BaseModel):
     """Individual independent claim analysis result model"""
     claim_number: str
     claim_original: str
+    claim_english: str
     claim_korean: str
     claim_chart: List[ClaimChartElement]
 
@@ -618,7 +619,7 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
             return []
 
     async def translate_claim_async(self, claim_text: str) -> str:
-        """Translate claim (async version - for parallel processing)"""
+        """Translate claim to Korean (async version - for parallel processing)"""
         # Check if Korean
         if re.search(r'[가-힣]', claim_text):
             return claim_text
@@ -638,8 +639,29 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
             print(f"[Translation] Error: {e}")
             return claim_text  # 실패 시 원문 반환
 
+    async def translate_claim_to_english_async(self, claim_text: str) -> str:
+        """Translate claim to English (async version - for parallel processing)"""
+        # Check if already English (no Korean characters)
+        if not re.search(r'[가-힣]', claim_text):
+            return claim_text
+
+        try:
+            response = await self.async_client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "Translate the patent claim to English accurately."},
+                    {"role": "user", "content": claim_text}
+                ],
+                max_completion_tokens=4000
+            )
+            self._track_tokens(response)  # 토큰 추적
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"[Translation to English] Error: {e}")
+            return claim_text  # 실패 시 원문 반환
+
     async def translate_claims_batch(self, claims_texts: List[str], batch_size: int = 10) -> List[str]:
-        """Batch translate claims (parallel processing)"""
+        """Batch translate claims to Korean (parallel processing)"""
         all_translations = []
         total_batches = (len(claims_texts) + batch_size - 1) // batch_size
 
@@ -647,7 +669,7 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
             batch = claims_texts[batch_idx:batch_idx + batch_size]
             batch_num = batch_idx // batch_size + 1
 
-            print(f"[Translation] Batch {batch_num}/{total_batches}: Processing {len(batch)} claim(s)...")
+            print(f"[Translation to Korean] Batch {batch_num}/{total_batches}: Processing {len(batch)} claim(s)...")
 
             # 배치 내에서 병렬 처리
             batch_translations = await asyncio.gather(*[
@@ -655,7 +677,28 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
             ])
 
             all_translations.extend(batch_translations)
-            print(f"[Translation] ✓ Batch {batch_num}/{total_batches} completed")
+            print(f"[Translation to Korean] ✓ Batch {batch_num}/{total_batches} completed")
+
+        return all_translations
+
+    async def translate_claims_to_english_batch(self, claims_texts: List[str], batch_size: int = 10) -> List[str]:
+        """Batch translate claims to English (parallel processing)"""
+        all_translations = []
+        total_batches = (len(claims_texts) + batch_size - 1) // batch_size
+
+        for batch_idx in range(0, len(claims_texts), batch_size):
+            batch = claims_texts[batch_idx:batch_idx + batch_size]
+            batch_num = batch_idx // batch_size + 1
+
+            print(f"[Translation to English] Batch {batch_num}/{total_batches}: Processing {len(batch)} claim(s)...")
+
+            # 배치 내에서 병렬 처리
+            batch_translations = await asyncio.gather(*[
+                self.translate_claim_to_english_async(text) for text in batch
+            ])
+
+            all_translations.extend(batch_translations)
+            print(f"[Translation to English] ✓ Batch {batch_num}/{total_batches} completed")
 
         return all_translations
 
@@ -897,14 +940,20 @@ Return ONLY valid JSON."""
             print(f"[Analysis] Patent language: {'Korean' if is_korean_patent else 'English/Other'}")
 
             # Batch translation processing (10 at a time in parallel - speed improvement)
+            claim_texts = [claim["text"] for claim in independent_claims_data]
+
             if is_korean_patent:
-                print("[Analysis] Translation: Skipped (already Korean)")
-                translations = [claim["text"] for claim in independent_claims_data]
+                print("[Analysis] Translation to Korean: Skipped (already Korean)")
+                translations_korean = claim_texts
+                print(f"[Analysis] Translation to English: Processing {len(independent_claims_data)} claim(s)...")
+                translations_english = await self.translate_claims_to_english_batch(claim_texts, batch_size=10)
+                print(f"[Analysis] ✓ English translation completed")
             else:
-                print(f"[Analysis] Translation: Processing {len(independent_claims_data)} claim(s)...")
-                claim_texts = [claim["text"] for claim in independent_claims_data]
-                translations = await self.translate_claims_batch(claim_texts, batch_size=10)
-                print(f"[Analysis] ✓ Translation completed")
+                print(f"[Analysis] Translation to Korean: Processing {len(independent_claims_data)} claim(s)...")
+                translations_korean = await self.translate_claims_batch(claim_texts, batch_size=10)
+                print(f"[Analysis] ✓ Korean translation completed")
+                print("[Analysis] Translation to English: Skipped (already English)")
+                translations_english = claim_texts
 
             # Generate Claim Charts in parallel
             independent_claim_analyses = []
@@ -921,16 +970,17 @@ Return ONLY valid JSON."""
                         top_candidate.product_service,
                         patent_data
                     )
-                    for ind_claim, claim_korean in zip(independent_claims_data, translations)
+                    for ind_claim, claim_korean in zip(independent_claims_data, translations_korean)
                 ]
 
                 chart_results = await asyncio.gather(*chart_tasks)
 
                 # Combine results
-                for ind_claim, claim_korean, (_, claim_chart) in zip(independent_claims_data, translations, chart_results):
+                for ind_claim, claim_korean, claim_english, (_, claim_chart) in zip(independent_claims_data, translations_korean, translations_english, chart_results):
                     independent_claim_analyses.append(IndependentClaimAnalysis(
                         claim_number=ind_claim["number"],
                         claim_original=ind_claim.get("full_text", ind_claim["text"]),
+                        claim_english=claim_english,
                         claim_korean=claim_korean,
                         claim_chart=claim_chart
                     ))
@@ -938,10 +988,11 @@ Return ONLY valid JSON."""
                 print(f"[Analysis] ✓ Step 4 completed: All claim charts created")
             else:
                 # Generate analysis results without claim charts
-                for ind_claim, claim_korean in zip(independent_claims_data, translations):
+                for ind_claim, claim_korean, claim_english in zip(independent_claims_data, translations_korean, translations_english):
                     independent_claim_analyses.append(IndependentClaimAnalysis(
                         claim_number=ind_claim["number"],
                         claim_original=ind_claim.get("full_text", ind_claim["text"]),
+                        claim_english=claim_english,
                         claim_korean=claim_korean,
                         claim_chart=[]
                     ))
@@ -1060,6 +1111,7 @@ def format_analysis_report(analysis: PatentInfringementAnalysis) -> str:
     for idx, claim_analysis in enumerate(analysis.independent_claim_analyses, 1):
         report += f"## {4 + idx}. Claim {claim_analysis.claim_number} Analysis\n\n"
         report += f"### Original\n\n```\n{claim_analysis.claim_original}\n```\n\n"
+        report += f"### English Translation\n\n{claim_analysis.claim_english}\n\n"
         report += f"### Korean Translation\n\n{claim_analysis.claim_korean}\n\n"
 
         if claim_analysis.claim_chart:
