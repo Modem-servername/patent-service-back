@@ -59,7 +59,7 @@ async function login(password) {
   // 예상: 8b7df143d91c716ecfa5fc1730022f6b421b05cedee8fd52b1fc65a96030ad52
 
   // 2. 해시를 서버로 전송
-  const response = await fetch('http://localhost:8000/login', {
+  const response = await fetch('https://patent-service-back.vercel.app//login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -151,7 +151,7 @@ function LoginPage() {
       const passwordHash = await hashPassword(password);
 
       // 2. 서버로 전송
-      const response = await fetch('http://localhost:8000/login', {
+      const response = await fetch('https://patent-service-back.vercel.app//login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password_hash: passwordHash })
