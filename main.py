@@ -1528,6 +1528,19 @@ async def get_requests(
     # Parse JSON fields for all requests
     requests = [parse_request_json_fields(req) for req in requests]
 
+    # Add analysis_mode field for frontend compatibility
+    for req in requests:
+        # Determine analysis_mode based on input type or other criteria
+        # Default to 'single' for now - adjust based on your business logic
+        if 'analysis_mode' not in req or req['analysis_mode'] is None:
+            req['analysis_mode'] = 'single'  # or 'comparison' based on your logic
+
+    # Debug logging - print first request to verify structure
+    if requests:
+        print(f"[API /requests] Sample request data structure:")
+        print(f"  Keys: {list(requests[0].keys())}")
+        print(f"  First request: {json.dumps({k: str(v)[:50] if isinstance(v, str) else v for k, v in requests[0].items()}, indent=2, ensure_ascii=False)}")
+
     return {
         "total": len(requests),
         "limit": limit,

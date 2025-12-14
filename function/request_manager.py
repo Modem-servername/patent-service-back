@@ -63,6 +63,7 @@ def init_database():
                 create_detailed_chart BOOLEAN,
                 model TEXT,
                 follow_up_questions TEXT,  -- JSON array
+                analysis_mode TEXT DEFAULT 'single',  -- 'single' or 'comparison'
 
                 -- Status
                 status TEXT,  -- 'pending', 'processing', 'completed', 'failed', 'cancelled'
@@ -88,6 +89,19 @@ def init_database():
                 error_traceback TEXT
             )
         """)
+
+        # Add analysis_mode column to existing tables (migration)
+        try:
+            cursor.execute("""
+                ALTER TABLE analysis_requests
+                ADD COLUMN IF NOT EXISTS analysis_mode TEXT DEFAULT 'single'
+            """)
+            conn.commit()
+            print("[DB] Added analysis_mode column (if not exists)")
+        except Exception as e:
+            # Column might already exist, ignore error
+            conn.rollback()
+            print(f"[DB] analysis_mode column already exists or migration skipped: {e}")
 
         # Create indexes
         cursor.execute("""
@@ -115,7 +129,8 @@ def create_request(
     max_candidates: int = 10,
     create_detailed_chart: bool = True,
     model: str = "gpt-5",
-    follow_up_questions: Optional[str] = None  # Changed from list to str
+    follow_up_questions: Optional[str] = None,  # Changed from list to str
+    analysis_mode: str = "single"  # 'single' or 'comparison'
 ) -> str:
     """
     Create new analysis request and save to DB
@@ -137,8 +152,8 @@ def create_request(
             INSERT INTO analysis_requests (
                 request_id, patent_number, input_type, filename,
                 max_candidates, create_detailed_chart, model, follow_up_questions,
-                status, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                analysis_mode, status, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             request_id,
             patent_number,
@@ -148,12 +163,13 @@ def create_request(
             create_detailed_chart,
             model,
             follow_up_questions_str,
+            analysis_mode,
             "pending",
             datetime.now().isoformat()
         ))
         conn.commit()
 
-    print(f"[Request Manager] Created request: {request_id}")
+    print(f"[Request Manager] Created request: {request_id} (analysis_mode: {analysis_mode})")
     return request_id
 
 
