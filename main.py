@@ -44,6 +44,7 @@ pdf_upload_router = None
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") != "*" else ["*"]
 
 if OPENAI_API_KEY and OPENAI_API_KEY != "your_api_key_here":
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
@@ -90,7 +91,31 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 _pdf_url_cache: Dict[str, tuple[str, float]] = {}  # {patent_number: (url, timestamp)}
 PDF_URL_CACHE_TTL = 86400  # 24 hours in seconds
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Handles application startup tasks:
+    - Initializes the database schema.
+    - Cleans up any stale requests from a previous run.
+    """
+    print("[Startup] Initializing database and cleaning up stale requests...")
+    try:
+        request_manager.init_database()
+        request_manager.cleanup_stale_requests(timeout_minutes=60)
+        print("[Startup] ✓ Startup tasks completed successfully.")
+    except Exception as e:
+        print(f"[Startup] ✗ CRITICAL: Database connection failed during startup: {e}")
+        print("[Startup] ✗ The application will not be able to handle requests properly.")
+        # The application will continue to run, but database-dependent endpoints will fail.
+        # This prevents a full crash on startup if the DB is temporarily unavailable.
 
 # Project root directory (where main.py is located)
 BASE_DIR = Path(__file__).parent.resolve()

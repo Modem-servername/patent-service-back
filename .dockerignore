@@ -1,0 +1,22 @@
+# Git and Docker config
+.git
+.gitignore
+Dockerfile
+docker-compose.yml
+
+# Python cache and artifacts
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment and secrets
+.env
+.claude
+
+# Local data, databases, and caches
+*.db
+*.db-journal*
+downloaded_patents/
+image_cache/
+uploads/

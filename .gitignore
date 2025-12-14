@@ -1,4 +1,10 @@
-downloaded_patents/
 **/__pycache__/
+
 analysis_requests.db
+
 .env
+.claude
+
+uploads
+image_cache
+downloaded_patents

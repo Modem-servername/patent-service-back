@@ -9,5 +9,6 @@ openai
 pydantic
 python-dotenv
 tavily-python
-jose
+python-jose[cryptography]
+python-multipart
 psycopg2-binary

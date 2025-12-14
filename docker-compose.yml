@@ -1,0 +1,36 @@
+services:
+  api:
+    build: .
+    container_name: patent_service_api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mounts the local code into the container for live-reloading
+      - .:/app
+    env_file:
+      - ./.env
+    depends_on:
+      - db
+    # Overrides the Dockerfile CMD for development to enable auto-reloading
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: postgres:15-alpine
+    container_name: patent_service_db
+    restart: always
+    env_file:
+      - ./.env
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    ports:
+      # Maps port 5432 on your local machine to port 5432 inside the container
+      - "5432:5432"
+    volumes:
+      # This persists the database data on your local machine
+      - postgres_data:/var/lib/postgresql/data/
+
+volumes:
+  postgres_data:
+    name: patent_service_postgres_data
