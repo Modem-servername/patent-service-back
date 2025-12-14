@@ -527,12 +527,21 @@ RULES:
             # 응답 검증 강화
             message = response.choices[0].message
 
+            # 디버깅: 응답 객체 전체 확인
+            print(f"[Infringers] DEBUG - Response object: {response}")
+            print(f"[Infringers] DEBUG - Message: {message}")
+            print(f"[Infringers] DEBUG - Has refusal attr: {hasattr(message, 'refusal')}")
+
             # Refusal 체크
             if hasattr(message, 'refusal') and message.refusal:
-                print(f"[Infringers] ✗ API refused the request")
+                print(f"[Infringers] ✗ API refused the request: {message.refusal}")
                 return []
 
             response_text = message.content
+            print(f"[Infringers] DEBUG - Response text type: {type(response_text)}")
+            print(f"[Infringers] DEBUG - Response text length: {len(response_text) if response_text else 0}")
+            if response_text:
+                print(f"[Infringers] DEBUG - First 200 chars: {response_text[:200]}")
 
             if response_text is None or len(response_text.strip()) == 0:
                 print(f"[Infringers] ✗ Empty response, trying fallback...")
@@ -558,13 +567,21 @@ Return ONLY valid JSON in this exact format (all text in Korean except company n
                         max_completion_tokens=4000
                     )
                     self._track_tokens(retry_response)
-                    retry_text = retry_response.choices[0].message.content
+                    retry_message = retry_response.choices[0].message
+                    retry_text = retry_message.content
+
+                    print(f"[Infringers] DEBUG - Fallback response: {retry_response}")
+                    print(f"[Infringers] DEBUG - Fallback message: {retry_message}")
+                    print(f"[Infringers] DEBUG - Fallback text type: {type(retry_text)}")
+                    print(f"[Infringers] DEBUG - Fallback text length: {len(retry_text) if retry_text else 0}")
+                    if retry_text:
+                        print(f"[Infringers] DEBUG - Fallback first 200 chars: {retry_text[:200]}")
 
                     if retry_text and len(retry_text.strip()) > 0:
                         print(f"[Infringers] ✓ Fallback succeeded")
                         response_text = retry_text
                     else:
-                        print(f"[Infringers] ✗ Fallback failed")
+                        print(f"[Infringers] ✗ Fallback failed - empty response")
                         return []
                 except Exception as fallback_error:
                     print(f"[Infringers] ✗ Fallback error: {fallback_error}")
