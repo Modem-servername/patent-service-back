@@ -117,6 +117,24 @@ async def startup_event():
         # The application will continue to run, but database-dependent endpoints will fail.
         # This prevents a full crash on startup if the DB is temporarily unavailable.
 
+@app.on_event("startup")
+async def startup_event():
+    """
+    Handles application startup tasks:
+    - Initializes the database schema.
+    - Cleans up any stale requests from a previous run.
+    """
+    print("[Startup] Initializing database and cleaning up stale requests...")
+    try:
+        request_manager.init_database()
+        request_manager.cleanup_stale_requests(timeout_minutes=60)
+        print("[Startup] ✓ Startup tasks completed successfully.")
+    except Exception as e:
+        print(f"[Startup] ✗ CRITICAL: Database connection failed during startup: {e}")
+        print("[Startup] ✗ The application will not be able to handle requests properly.")
+        # The application will continue to run, but database-dependent endpoints will fail.
+        # This prevents a full crash on startup if the DB is temporarily unavailable.
+
 # Project root directory (where main.py is located)
 BASE_DIR = Path(__file__).parent.resolve()
 
